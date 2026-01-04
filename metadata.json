@@ -1,0 +1,8 @@
+{
+  "name": "Project & Client Control Hub",
+  "description": "A production-grade project management system featuring role-based AI modules: a Project Intelligence Engine for admins and a Client Status Interpreter for clients.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
