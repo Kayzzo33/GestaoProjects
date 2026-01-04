@@ -35,8 +35,13 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     const unsubscribe = onAuthStateChanged(auth, async (fUser) => {
       setFirebaseUser(fUser);
       if (fUser) {
-        const userData = await db.getUserByUid(fUser.uid);
-        setUser(userData);
+        try {
+          const userData = await db.getUserByUid(fUser.uid);
+          setUser(userData);
+        } catch (e) {
+          console.error("Auth profile fetch error:", e);
+          setUser(null);
+        }
       } else {
         setUser(null);
       }
@@ -67,15 +72,12 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; roles?: UserRole[] }> = ({ children, roles }) => {
   const { user, firebaseUser, loading } = useAuth();
   
-  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-900 text-white">Verificando credenciais...</div>;
+  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-900 text-white font-medium">Verificando segurança do Hub...</div>;
   
-  // Se não estiver logado no Firebase
   if (!firebaseUser) return <Navigate to="/login" replace />;
   
-  // Se logado no Firebase mas sem perfil no Firestore
   if (!user) return <Navigate to="/pending" replace />;
   
-  // Se logado e com perfil, mas sem a role necessária
   if (roles && !roles.includes(user.role)) {
     return user.role === UserRole.ADMIN ? <Navigate to="/admin" replace /> : <Navigate to="/client" replace />;
   }

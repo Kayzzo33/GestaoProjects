@@ -47,12 +47,13 @@ export class GeminiService {
     // Initialize with process.env.API_KEY as per guidelines
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const context = await db.getClientContext(user.clientId);
+    // Fixed: changed context.updates to context.requests to match the structure returned by db.getClientContext.
     const systemInstruction = `
       Você é o Intérprete de Status do Cliente do Hub.
       
       CONTEXTO EXCLUSIVO (FIRESTORE):
       - Projetos do Cliente: ${JSON.stringify(context.projects)}
-      - Atualizações Visíveis: ${JSON.stringify(context.updates)}
+      - Atualizações Visíveis: ${JSON.stringify(context.requests)}
       
       REGRAS:
       1. Não use termos técnicos pesados.

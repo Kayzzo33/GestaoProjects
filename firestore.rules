@@ -1,0 +1,51 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Função auxiliar para verificar se o usuário é ADMIN
+    function isAdmin() {
+      return request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
+    }
+
+    // Regras para a coleção de Usuários
+    match /users/{userId} {
+      // O próprio usuário pode ler seu perfil, ou um Admin
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      // Apenas Admins podem criar ou editar usuários (controle de acesso)
+      allow write: if isAdmin();
+    }
+
+    // Regras para a coleção de Clientes
+    match /clients/{clientId} {
+      allow read, write: if isAdmin();
+      // Permite que o cliente leia seus próprios dados de empresa
+      allow read: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId == clientId;
+    }
+
+    // Regras para a coleção de Projetos
+    match /projects/{projectId} {
+      allow read, write: if isAdmin();
+      // Clientes podem ler apenas projetos vinculados a eles e marcados como visíveis
+      allow read: if request.auth != null && 
+        resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId &&
+        resource.data.visibilityForClient == true;
+    }
+
+    // Regras para a coleção de Logs de Projeto
+    match /projectLogs/{logId} {
+      allow read, write: if isAdmin();
+      // Clientes podem ler logs visíveis de seus próprios projetos
+      allow read: if request.auth != null && 
+        resource.data.visibleToClient == true &&
+        get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId;
+    }
+
+    // Regras para a coleção de Auditoria (Apenas Admin)
+    match /auditLogs/{logId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

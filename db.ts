@@ -8,42 +8,54 @@ import {
   doc, 
   getDoc, 
   setDoc,
+  updateDoc,
+  deleteDoc,
   orderBy,
-  limit,
-  Timestamp,
-  serverTimestamp
+  limit
 } from "firebase/firestore";
 import { db_firestore } from "./firebase";
-import { User, Client, Project, ProjectLog, UserRole, ProjectStatus, AuditLog, LogType } from './types';
+import { User, Client, Project, ProjectLog, UserRole, ProjectStatus, AuditLog, LogType, ChangeRequest, RequestStatus } from './types';
 
 class Database {
   // --- AUDITORIA ---
-  async addAudit(action: string, type: 'PROJECT' | 'CLIENT' | 'USER', id: string, userName: string, details: string) {
-    await addDoc(collection(db_firestore, "auditLogs"), {
-      action,
-      entityType: type,
-      entityId: id,
-      userName,
-      details,
-      createdAt: new Date().toISOString()
-    });
+  async addAudit(action: string, type: any, id: string, userName: string, details: string) {
+    try {
+      await addDoc(collection(db_firestore, "auditLogs"), {
+        action,
+        entityType: type,
+        entityId: id,
+        userName,
+        details,
+        createdAt: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn("Audit error:", e);
+    }
   }
 
   async getAuditLogs(): Promise<AuditLog[]> {
-    const q = query(collection(db_firestore, "auditLogs"), orderBy("createdAt", "desc"), limit(50));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as AuditLog));
+    try {
+      const q = query(collection(db_firestore, "auditLogs"), orderBy("createdAt", "desc"), limit(50));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() } as AuditLog));
+    } catch (e) {
+      return [];
+    }
   }
 
   // --- USUÁRIOS ---
   async getUsers(): Promise<User[]> {
-    const snap = await getDocs(collection(db_firestore, "users"));
-    return snap.docs.map(doc => ({ ...doc.data() } as User));
+    try {
+      const snap = await getDocs(collection(db_firestore, "users"));
+      return snap.docs.map(doc => ({ ...doc.data() } as User));
+    } catch (e) { return []; }
   }
 
   async getUserByUid(uid: string): Promise<User | null> {
-    const docSnap = await getDoc(doc(db_firestore, "users", uid));
-    return docSnap.exists() ? (docSnap.data() as User) : null;
+    try {
+      const docSnap = await getDoc(doc(db_firestore, "users", uid));
+      return docSnap.exists() ? (docSnap.data() as User) : null;
+    } catch (e) { return null; }
   }
 
   async saveUser(userData: User, adminName: string) {
@@ -51,13 +63,20 @@ class Database {
       ...userData,
       updatedAt: new Date().toISOString()
     }, { merge: true });
-    await this.addAudit('SAVE_USER', 'USER', userData.id, adminName, `Usuário ${userData.email} atualizado/criado.`);
+    await this.addAudit('SAVE_USER', 'USER', userData.id, adminName, `Usuário ${userData.email} atualizado/vinculado.`);
+  }
+
+  async deleteUser(uid: string, adminName: string) {
+    await deleteDoc(doc(db_firestore, "users", uid));
+    await this.addAudit('DELETE_USER', 'USER', uid, adminName, `Usuário removido da matriz de acessos.`);
   }
 
   // --- CLIENTES ---
   async getClients(): Promise<Client[]> {
-    const snap = await getDocs(collection(db_firestore, "clients"));
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
+    try {
+      const snap = await getDocs(collection(db_firestore, "clients"));
+      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
+    } catch (e) { return []; }
   }
 
   async addClient(data: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>, adminName: string) {
@@ -70,14 +89,28 @@ class Database {
     return docRef.id;
   }
 
+  async updateClient(clientId: string, data: Partial<Client>, adminName: string) {
+    const docRef = doc(db_firestore, "clients", clientId);
+    await updateDoc(docRef, { ...data, updatedAt: new Date().toISOString() });
+    await this.addAudit('UPDATE_CLIENT', 'CLIENT', clientId, adminName, `Dados do cliente atualizados.`);
+  }
+
   // --- PROJETOS ---
   async getProjects(includeArchived = false): Promise<Project[]> {
-    const q = includeArchived 
-      ? collection(db_firestore, "projects")
-      : query(collection(db_firestore, "projects"), where("isArchived", "==", false));
-    
-    const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+    try {
+      const q = includeArchived 
+        ? collection(db_firestore, "projects")
+        : query(collection(db_firestore, "projects"), where("isArchived", "==", false));
+      
+      const snap = await getDocs(q);
+      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+    } catch (e) { return []; }
+  }
+
+  async updateProject(projectId: string, data: Partial<Project>, adminName: string) {
+    const docRef = doc(db_firestore, "projects", projectId);
+    await updateDoc(docRef, { ...data, updatedAt: new Date().toISOString() });
+    await this.addAudit('UPDATE_PROJECT', 'PROJECT', projectId, adminName, `Projeto ${projectId} atualizado.`);
   }
 
   async addProject(data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>, adminName: string) {
@@ -88,41 +121,44 @@ class Database {
       updatedAt: new Date().toISOString()
     });
     await this.addAudit('CREATE_PROJECT', 'PROJECT', docRef.id, adminName, `Projeto ${data.name} iniciado.`);
-    
-    // Log automático de status inicial
-    await this.addLog({
-      projectId: docRef.id,
-      logType: LogType.MILESTONE,
-      title: "Projeto Criado",
-      description: `Projeto inicializado com status: ${data.status}`,
-      visibleToClient: data.visibilityForClient,
-      createdBy: adminName
-    });
-
     return docRef.id;
   }
 
-  async updateProjectStatus(projectId: string, status: ProjectStatus, adminName: string) {
-    const docRef = doc(db_firestore, "projects", projectId);
-    await setDoc(docRef, { status, updatedAt: new Date().toISOString() }, { merge: true });
-    await this.addLog({
-      projectId,
-      logType: LogType.UPDATE,
-      title: "Alteração de Status",
-      description: `O status do projeto foi alterado para: ${status}`,
-      visibleToClient: true,
-      createdBy: adminName
+  // --- SOLICITAÇÕES (TICKETS) ---
+  async addChangeRequest(data: Omit<ChangeRequest, 'id' | 'createdAt' | 'updatedAt'>) {
+    await addDoc(collection(db_firestore, "changeRequests"), {
+      ...data,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     });
+  }
+
+  async getChangeRequests(clientId?: string): Promise<ChangeRequest[]> {
+    try {
+      const q = clientId 
+        ? query(collection(db_firestore, "changeRequests"), where("clientId", "==", clientId), orderBy("createdAt", "desc"))
+        : query(collection(db_firestore, "changeRequests"), orderBy("createdAt", "desc"));
+      
+      const snap = await getDocs(q);
+      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChangeRequest));
+    } catch (e) { return []; }
+  }
+
+  async updateRequestStatus(requestId: string, status: RequestStatus, comment: string, adminName: string) {
+    const docRef = doc(db_firestore, "changeRequests", requestId);
+    await updateDoc(docRef, { status, adminComment: comment, updatedAt: new Date().toISOString() });
+    await this.addAudit('UPDATE_REQUEST', 'REQUEST', requestId, adminName, `Ticket atualizado para ${status}`);
   }
 
   // --- LOGS ---
   async getLogs(projectId?: string): Promise<ProjectLog[]> {
-    const q = projectId 
-      ? query(collection(db_firestore, "projectLogs"), where("projectId", "==", projectId), orderBy("createdAt", "desc"))
-      : query(collection(db_firestore, "projectLogs"), orderBy("createdAt", "desc"), limit(100));
-    
-    const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProjectLog));
+    try {
+      const q = projectId 
+        ? query(collection(db_firestore, "projectLogs"), where("projectId", "==", projectId), orderBy("createdAt", "desc"))
+        : query(collection(db_firestore, "projectLogs"), orderBy("createdAt", "desc"), limit(100));
+      const snap = await getDocs(q);
+      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProjectLog));
+    } catch (e) { return []; }
   }
 
   async addLog(data: Omit<ProjectLog, 'id' | 'createdAt'>) {
@@ -132,14 +168,14 @@ class Database {
     });
   }
 
-  // --- CONTEXTO PARA IA ---
   async getAdminContext() {
-    const [projects, logs, clients] = await Promise.all([
+    const [projects, logs, clients, requests] = await Promise.all([
       this.getProjects(),
       this.getLogs(),
-      this.getClients()
+      this.getClients(),
+      this.getChangeRequests()
     ]);
-    return { projects, logs, clients };
+    return { projects, logs, clients, requests };
   }
 
   async getClientContext(clientId: string) {
@@ -149,19 +185,9 @@ class Database {
       where("visibilityForClient", "==", true)
     ));
     const projects = projectsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Project));
-    const projectIds = projects.map(p => p.id);
+    const requests = await this.getChangeRequests(clientId);
     
-    if (projectIds.length === 0) return { projects: [], updates: [] };
-
-    const logsSnap = await getDocs(query(
-      collection(db_firestore, "projectLogs"), 
-      where("projectId", "in", projectIds), 
-      where("visibleToClient", "==", true),
-      orderBy("createdAt", "desc")
-    ));
-    const updates = logsSnap.docs.map(d => ({ id: d.id, ...d.data() } as ProjectLog));
-    
-    return { projects, updates };
+    return { projects, requests };
   }
 }
 

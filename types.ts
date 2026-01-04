@@ -21,6 +21,21 @@ export enum LogType {
   NOTE = 'NOTE'
 }
 
+export enum RequestStatus {
+  OPEN = 'OPEN',
+  REVIEWING = 'REVIEWING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  DONE = 'DONE'
+}
+
+export interface LighthouseMetrics {
+  performance: number;
+  accessibility: number;
+  bestPractices: number;
+  seo: number;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -48,19 +63,35 @@ export interface Project {
   id: string;
   name: string;
   description: string;
-  clientId?: string; 
+  clientId?: string | null; 
   projectType: string;
   stack: string;
   productionUrl: string;
   stagingUrl: string;
   repositoryUrl: string;
+  figmaUrl?: string;
+  docsUrl?: string;
   status: ProjectStatus;
   visibilityForClient: boolean;
+  lighthouseMetrics?: LighthouseMetrics;
   startDate: string;
   expectedEndDate: string;
   createdAt: string;
   updatedAt: string;
   isArchived?: boolean;
+}
+
+export interface ChangeRequest {
+  id: string;
+  projectId: string;
+  clientId: string;
+  title: string;
+  description: string;
+  type: 'BUG' | 'IMPROVEMENT' | 'NEW_FEATURE';
+  status: RequestStatus;
+  adminComment?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ProjectLog {
@@ -70,14 +101,14 @@ export interface ProjectLog {
   title: string;
   description: string;
   visibleToClient: boolean;
-  createdBy: string; // User Name
+  createdBy: string;
   createdAt: string;
 }
 
 export interface AuditLog {
   id: string;
   action: string;
-  entityType: 'PROJECT' | 'CLIENT' | 'USER';
+  entityType: 'PROJECT' | 'CLIENT' | 'USER' | 'REQUEST';
   entityId: string;
   userName: string;
   details: string;
