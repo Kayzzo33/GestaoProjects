@@ -40,6 +40,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  phone?: string; // Novo campo
   role: UserRole;
   isActive: boolean;
   clientId?: string;
@@ -50,7 +51,7 @@ export interface User {
 export interface Client {
   id: string;
   companyName: string;
-  contactName: string;
+  contactName: string; 
   email: string;
   phone: string;
   notes: string;
@@ -119,4 +120,12 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+}
+
+export interface ClientRankInfo {
+  position: number;
+  medal: string;
+  category: string;
+  color: string;
+  message: string;
 }

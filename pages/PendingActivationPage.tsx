@@ -1,7 +1,6 @@
 
 import React from 'react';
-// Fix: Import useAuth from AuthContext instead of App
-import { useAuth } from '../contexts/AuthContext.tsx';
+import { useAuth } from '../App';
 import { Navigate } from 'react-router-dom';
 
 const PendingActivationPage: React.FC = () => {

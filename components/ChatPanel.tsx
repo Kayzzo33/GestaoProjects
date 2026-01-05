@@ -1,8 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage } from '../types';
-// Fix: Import useAuth from AuthContext instead of App
-import { useAuth } from '../contexts/AuthContext.tsx';
+import { useAuth } from '../App';
 import { geminiService } from '../geminiService';
 
 interface ChatPanelProps {
