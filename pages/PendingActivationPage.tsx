@@ -38,7 +38,7 @@ const PendingActivationPage: React.FC = () => {
         <p className="text-[10px] text-slate-500 mt-4 leading-relaxed">
           <strong>O que fazer agora?</strong><br />
           1. Copie o UID acima.<br />
-          2. Vá ao Firebase Console -> Firestore.<br />
+          2. Vá ao Firebase Console -&gt; Firestore.<br />
           3. Na coleção <code className="text-slate-300">users</code>, crie um documento com o ID sendo este UID.<br />
           4. Defina o campo <code className="text-slate-300">role</code> como <code className="text-slate-300">ADMIN</code>.
         </p>
