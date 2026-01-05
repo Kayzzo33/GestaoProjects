@@ -1,4 +1,4 @@
-import * as firebaseApp from "firebase/app";
+import { initializeApp, getApp, getApps } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
@@ -12,11 +12,11 @@ const firebaseConfig = {
   appId: "1:446514075562:web:865f6d349f04c49c9dbdd3"
 };
 
-// Fixed: Using namespace import for firebase/app to ensure initializeApp and app management functions 
-// are correctly resolved across different TypeScript and bundler configurations.
-const app = firebaseApp.getApps().length > 0 
-  ? firebaseApp.getApp() 
-  : firebaseApp.initializeApp(firebaseConfig);
+// Fix: Initializing Firebase app with check for existing instances to comply with v9+ Modular SDK
+// Using named imports initializeApp, getApp, and getApps from 'firebase/app'
+const app = getApps().length > 0 
+  ? getApp() 
+  : initializeApp(firebaseConfig);
 
 // Exportação de instâncias registradas
 export const auth = getAuth(app);

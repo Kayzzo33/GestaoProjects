@@ -29,7 +29,7 @@ const LighthouseGauge = ({ value, label }: { value: number | undefined; label: s
         </svg>
         <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black">{safeValue}</span>
       </div>
-      <span className="mt-2 text-[8px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
+      <span className="mt-2 text-[8px] font-black text-slate-400 uppercase tracking-widest text-center">{label}</span>
     </div>
   );
 };
@@ -51,8 +51,12 @@ const AdminDashboard: React.FC = () => {
   const [requests, setRequests] = useState<ChangeRequest[]>([]);
 
   const activeProject = useMemo(() => 
-    showModal === 'edit-project' || view === 'project-detail' ? projects.find(p => p.id === selectedProjectId) : null
-  , [projects, selectedProjectId, showModal, view]);
+    projects.find(p => p.id === selectedProjectId) || null
+  , [projects, selectedProjectId]);
+
+  const projectLogs = useMemo(() => 
+    logs.filter(l => l.projectId === selectedProjectId)
+  , [logs, selectedProjectId]);
 
   const activeClient = clients.find(c => c.id === selectedClientId);
 
@@ -144,11 +148,8 @@ const AdminDashboard: React.FC = () => {
       clientId: clientId,
       stack: f.get('stack') as string,
       productionUrl: f.get('productionUrl') as string,
-      stagingUrl: f.get('stagingUrl') as string,
       figmaUrl: f.get('figmaUrl') as string,
-      docsUrl: f.get('docsUrl') as string,
       status: f.get('status') as ProjectStatus,
-      visibilityForClient: f.get('visibility') === 'true',
       lighthouseMetrics: {
         performance: Number(f.get('perf')) || 0,
         accessibility: Number(f.get('acc')) || 0,
@@ -178,11 +179,11 @@ const AdminDashboard: React.FC = () => {
     <nav className="space-y-1">
       <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-3 mb-2">Administração</div>
       <button onClick={() => setView('overview')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'overview' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
         <span>Painel IA</span>
       </button>
       <button onClick={() => setView('projects')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'projects' || view === 'project-detail' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
         <span>Projetos</span>
       </button>
       <button onClick={() => setView('requests')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'requests' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>
@@ -308,22 +309,84 @@ const AdminDashboard: React.FC = () => {
       {view === 'project-detail' && activeProject && (
         <div className="space-y-10 animate-in fade-in">
           <div className="flex justify-between items-start">
-            <button onClick={() => setView('projects')} className="text-slate-400 font-black text-[10px] tracking-widest flex items-center space-x-2 hover:text-slate-900">
+            <button onClick={() => setView('projects')} className="text-slate-400 font-black text-[10px] tracking-widest flex items-center space-x-2 hover:text-slate-900 uppercase">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-              <span>VOLTAR AOS PROJETOS</span>
+              <span>Voltar aos Projetos</span>
             </button>
             <div className="flex space-x-4">
-               <button onClick={() => setShowModal('edit-project')} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-500/20">Configurar Projeto</button>
+               <button onClick={() => setShowModal('edit-project')} className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-blue-500/20">Configurar Projeto</button>
             </div>
           </div>
-          <div className="bg-white p-12 rounded-[48px] border border-slate-200 shadow-sm">
-              <h2 className="text-4xl font-black tracking-tighter mb-4">{activeProject.name}</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-10 border-t border-slate-50">
-                  <LighthouseGauge value={activeProject.lighthouseMetrics?.performance} label="Performance" />
-                  <LighthouseGauge value={activeProject.lighthouseMetrics?.accessibility} label="Acessibilidade" />
-                  <LighthouseGauge value={activeProject.lighthouseMetrics?.bestPractices} label="Boas Práticas" />
-                  <LighthouseGauge value={activeProject.lighthouseMetrics?.seo} label="SEO" />
-              </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+             <div className="lg:col-span-2 space-y-10">
+                <div className="bg-white p-12 rounded-[56px] border border-slate-200 shadow-sm">
+                   <div className="flex justify-between items-start mb-10">
+                      <h2 className="text-5xl font-black tracking-tighter text-slate-900">{activeProject.name}</h2>
+                      <span className="px-6 py-2 bg-blue-50 text-blue-600 text-[10px] font-black rounded-full border border-blue-100 uppercase tracking-widest">{activeProject.status}</span>
+                   </div>
+                   
+                   <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-10 border-t border-b border-slate-50 mb-10">
+                      <LighthouseGauge value={activeProject.lighthouseMetrics?.performance} label="Performance" />
+                      <LighthouseGauge value={activeProject.lighthouseMetrics?.accessibility} label="Acessibilidade" />
+                      <LighthouseGauge value={activeProject.lighthouseMetrics?.bestPractices} label="Boas Práticas" />
+                      <LighthouseGauge value={activeProject.lighthouseMetrics?.seo} label="SEO" />
+                   </div>
+
+                   <div className="mb-10 p-8 bg-slate-50 rounded-[32px] border border-slate-100">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Stack Tecnológica</h4>
+                      <div className="flex flex-wrap gap-2">
+                         {activeProject.stack.split(',').map((s, i) => (
+                           <span key={i} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700">{s.trim()}</span>
+                         ))}
+                      </div>
+                   </div>
+
+                   <div className="prose prose-slate max-w-none text-slate-600 font-medium leading-relaxed mb-10">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeProject.description}</ReactMarkdown>
+                   </div>
+
+                   <div className="pt-10 border-t border-slate-50">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Linha do Tempo / Logs</h4>
+                      <div className="space-y-4">
+                         {projectLogs.length === 0 ? (
+                           <p className="text-slate-300 italic text-sm">Nenhum log registrado para este projeto.</p>
+                         ) : (
+                           projectLogs.map(l => (
+                             <div key={l.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                                <div>
+                                   <p className="text-sm font-black text-slate-900">{l.title}</p>
+                                   <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">{new Date(l.createdAt).toLocaleString()}</p>
+                                </div>
+                                <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${l.logType === LogType.ISSUE ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'}`}>{l.logType}</span>
+                             </div>
+                           ))
+                         )}
+                      </div>
+                   </div>
+                </div>
+             </div>
+
+             <div className="space-y-10">
+                <div className="bg-slate-950 p-10 rounded-[48px] text-white shadow-2xl">
+                   <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400 mb-10">Ecossistema Live</h3>
+                   <div className="space-y-4">
+                      {activeProject.productionUrl && (
+                        <a href={activeProject.productionUrl} target="_blank" className="flex items-center justify-between p-5 bg-slate-900 rounded-3xl hover:bg-blue-600 transition-all border border-slate-800 group">
+                           <span className="text-[10px] font-black uppercase tracking-widest">Produção</span>
+                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+                        </a>
+                      )}
+                      {activeProject.figmaUrl && (
+                        <a href={activeProject.figmaUrl} target="_blank" className="flex items-center justify-between p-5 bg-slate-900 rounded-3xl hover:bg-purple-600 transition-all border border-slate-800">
+                           <span className="text-[10px] font-black uppercase tracking-widest">Figma Design</span>
+                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+                        </a>
+                      )}
+                   </div>
+                </div>
+                <ChatPanel type="admin" title="Engenheiro IA" description={`Analisando ${activeProject.name}`} />
+             </div>
           </div>
         </div>
       )}
@@ -343,7 +406,7 @@ const AdminDashboard: React.FC = () => {
                  <div key={c.id} className="bg-white p-10 rounded-[40px] border border-slate-200 shadow-sm group hover:shadow-xl transition-all relative overflow-hidden">
                     <div className={`absolute top-0 right-0 p-8 text-3xl opacity-20`}>{rd.medal}</div>
                     <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 mb-8 group-hover:bg-blue-50 group-hover:text-blue-600 transition-all">
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
                     </div>
                     <h3 className="text-2xl font-black text-slate-900 mb-2">{c.companyName}</h3>
                     <p className="text-sm font-bold text-slate-400 mb-8 tracking-tight">{c.contactName} • {c.email}</p>
@@ -527,7 +590,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL NOVO/EDITAR PROJETO */}
+      {/* MODAL PROJETO */}
       {(showModal === 'project' || showModal === 'edit-project') && (
         <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-2xl flex items-center justify-center p-6 z-[60] overflow-y-auto">
           <div className="bg-white rounded-[56px] w-full max-w-4xl p-16 shadow-2xl my-auto relative animate-in zoom-in-95 duration-300">
@@ -537,7 +600,7 @@ const AdminDashboard: React.FC = () => {
                 <div className="space-y-6">
                    <div className="space-y-2">
                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nome do Projeto</label>
-                     <input name="name" defaultValue={showModal === 'edit-project' ? activeProject?.name : ''} className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-black text-xl outline-none focus:ring-4 focus:ring-blue-500/10" required />
+                     <input name="name" defaultValue={showModal === 'edit-project' ? activeProject?.name : ''} className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-black text-xl outline-none" required />
                    </div>
                    <div className="space-y-2">
                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Parceiro</label>
@@ -554,13 +617,28 @@ const AdminDashboard: React.FC = () => {
                    </div>
                 </div>
                 <div className="space-y-6">
+                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Métricas Lighthouse (0-100)</p>
                    <div className="grid grid-cols-2 gap-4">
-                     <input name="perf" type="number" placeholder="Perf" defaultValue={showModal === 'edit-project' ? activeProject?.lighthouseMetrics?.performance : 0} className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-black text-center" />
-                     <input name="acc" type="number" placeholder="Acc" defaultValue={showModal === 'edit-project' ? activeProject?.lighthouseMetrics?.accessibility : 0} className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-black text-center" />
+                     <div className="space-y-1">
+                        <label className="text-[8px] font-black text-slate-400 uppercase px-4">Performance</label>
+                        <input name="perf" type="number" defaultValue={showModal === 'edit-project' ? activeProject?.lighthouseMetrics?.performance : 0} className="w-full p-5 bg-slate-50 border rounded-[24px] font-black text-center" />
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[8px] font-black text-slate-400 uppercase px-4">Acessibilidade</label>
+                        <input name="acc" type="number" defaultValue={showModal === 'edit-project' ? activeProject?.lighthouseMetrics?.accessibility : 0} className="w-full p-5 bg-slate-50 border rounded-[24px] font-black text-center" />
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[8px] font-black text-slate-400 uppercase px-4">Boas Práticas</label>
+                        <input name="bp" type="number" defaultValue={showModal === 'edit-project' ? activeProject?.lighthouseMetrics?.bestPractices : 0} className="w-full p-5 bg-slate-50 border rounded-[24px] font-black text-center" />
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[8px] font-black text-slate-400 uppercase px-4">SEO</label>
+                        <input name="seo" type="number" defaultValue={showModal === 'edit-project' ? activeProject?.lighthouseMetrics?.seo : 0} className="w-full p-5 bg-slate-50 border rounded-[24px] font-black text-center" />
+                     </div>
                    </div>
-                   <input name="productionUrl" placeholder="Produção URL" defaultValue={showModal === 'edit-project' ? activeProject?.productionUrl : ''} className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-bold outline-none" />
-                   <input name="figmaUrl" placeholder="Figma URL" defaultValue={showModal === 'edit-project' ? activeProject?.figmaUrl : ''} className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-bold outline-none" />
-                   <input name="stack" placeholder="Stack Tecnológica" defaultValue={showModal === 'edit-project' ? activeProject?.stack : ''} className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-bold outline-none" required />
+                   <input name="productionUrl" placeholder="Produção URL" defaultValue={showModal === 'edit-project' ? activeProject?.productionUrl : ''} className="w-full p-6 bg-slate-50 border rounded-[28px] font-bold outline-none" />
+                   <input name="figmaUrl" placeholder="Figma URL" defaultValue={showModal === 'edit-project' ? activeProject?.figmaUrl : ''} className="w-full p-6 bg-slate-50 border rounded-[28px] font-bold outline-none" />
+                   <input name="stack" placeholder="Stack Tecnológica (separada por vírgula)" defaultValue={showModal === 'edit-project' ? activeProject?.stack : ''} className="w-full p-6 bg-slate-50 border rounded-[28px] font-bold outline-none" required />
                 </div>
               </div>
               <textarea name="description" defaultValue={showModal === 'edit-project' ? activeProject?.description : ''} className="w-full p-8 bg-slate-50 border border-slate-100 rounded-[40px] h-40 font-medium text-lg outline-none resize-none" required placeholder="Descrição do projeto..."></textarea>
@@ -573,7 +651,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL USER (VINCULAR PERFIL) */}
+      {/* MODAL USER */}
       {showModal === 'user' && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-2xl flex items-center justify-center p-6 z-[60]">
           <div className="bg-white rounded-[48px] w-full max-w-2xl p-16 shadow-2xl animate-in zoom-in-95 duration-300">
@@ -620,7 +698,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL NOVO PARCEIRO */}
+      {/* MODAL CLIENTE */}
       {showModal === 'client' && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-2xl flex items-center justify-center p-6 z-[60]">
            <div className="bg-white rounded-[56px] w-full max-w-2xl p-16 shadow-2xl animate-in zoom-in-95 duration-300">
@@ -633,7 +711,7 @@ const AdminDashboard: React.FC = () => {
                     <input name="phone" placeholder="WhatsApp" className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-bold outline-none" />
                  </div>
                  <div className="flex space-x-6 pt-10">
-                    <button type="button" onClick={() => setShowModal(null)} className="flex-1 py-5 font-black text-slate-400">CANCELAR</button>
+                    <button type="button" onClick={() => setShowModal(null)} className="flex-1 py-5 font-black text-slate-400 uppercase tracking-widest">CANCELAR</button>
                     <button type="submit" className="flex-1 py-5 bg-blue-600 text-white rounded-[28px] font-black shadow-2xl uppercase tracking-widest">CADASTRAR</button>
                  </div>
               </form>

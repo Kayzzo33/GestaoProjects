@@ -149,6 +149,36 @@ const ClientDashboard: React.FC = () => {
                  </div>
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div className="bg-white p-10 rounded-[40px] border border-slate-200 shadow-sm">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Especificações Técnicas</h4>
+                    <div className="flex flex-wrap gap-2">
+                       {selectedProject.stack.split(',').map((s, i) => (
+                         <span key={i} className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-black text-slate-700">{s.trim()}</span>
+                       ))}
+                    </div>
+                 </div>
+                 <div className="bg-white p-10 rounded-[40px] border border-slate-200 shadow-sm">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Cronograma & Tipo</h4>
+                    <div className="space-y-4">
+                       <div>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase">Categoria</p>
+                          <p className="text-sm font-black text-slate-900">{selectedProject.projectType || 'SISTEMA WEB'}</p>
+                       </div>
+                       <div className="grid grid-cols-2 gap-4">
+                          <div>
+                             <p className="text-[9px] font-bold text-slate-400 uppercase">Início</p>
+                             <p className="text-sm font-black text-slate-900">{new Date(selectedProject.startDate).toLocaleDateString()}</p>
+                          </div>
+                          <div>
+                             <p className="text-[9px] font-bold text-slate-400 uppercase">Previsão</p>
+                             <p className="text-sm font-black text-slate-900">{selectedProject.expectedEndDate ? new Date(selectedProject.expectedEndDate).toLocaleDateString() : 'INDETERMINADO'}</p>
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+              </div>
+
               <div className="bg-white rounded-[40px] p-12 border border-slate-200 shadow-sm leading-relaxed">
                  <div className="prose prose-slate prose-lg max-w-none text-slate-600 font-medium">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedProject.description}</ReactMarkdown>
@@ -181,15 +211,32 @@ const ClientDashboard: React.FC = () => {
                  </div>
               </div>
            </div>
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="bg-white p-12 rounded-[48px] border border-slate-100 shadow-sm">
-                 <h3 className="text-xl font-black mb-8 text-slate-900 uppercase text-sm tracking-tight">Timeline do Motor IA</h3>
-                 <p className="text-slate-400 font-medium italic text-center py-10">Aguardando novos sinais do servidor...</p>
+
+           <div className="bg-white rounded-[48px] border border-slate-200 overflow-hidden shadow-2xl h-[700px] relative group">
+              <div className="absolute top-0 left-0 right-0 h-12 bg-slate-100 border-b flex items-center px-6 space-x-2 z-10">
+                 <div className="flex space-x-1.5">
+                    <div className="w-3 h-3 rounded-full bg-rose-400"></div>
+                    <div className="w-3 h-3 rounded-full bg-amber-400"></div>
+                    <div className="w-3 h-3 rounded-full bg-emerald-400"></div>
+                 </div>
+                 <div className="flex-1 max-w-md mx-auto bg-white rounded-lg px-4 py-1 text-[10px] font-bold text-slate-400 truncate text-center">
+                    {selectedProject.productionUrl || 'Servidor Interno'}
+                 </div>
               </div>
-              <div className="bg-white p-12 rounded-[48px] border border-slate-100 shadow-sm">
-                 <h3 className="text-xl font-black mb-8 text-slate-900 uppercase text-sm tracking-tight">Logs de Engenharia</h3>
-                 <p className="text-slate-300 font-black uppercase text-[10px] tracking-widest text-center py-10">Acesso root necessário para logs brutos.</p>
-              </div>
+              {selectedProject.productionUrl ? (
+                <iframe 
+                  src={selectedProject.productionUrl} 
+                  className="w-full h-full pt-12 border-none"
+                  title="Live Preview"
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center pt-12 bg-slate-50">
+                   <div className="w-20 h-20 bg-slate-200 rounded-full flex items-center justify-center mb-6">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                   </div>
+                   <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Visualização Indisponível</p>
+                </div>
+              )}
            </div>
         </div>
       )}
