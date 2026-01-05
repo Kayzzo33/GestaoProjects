@@ -11,12 +11,11 @@ import { ProjectStatus, Project, Client, ProjectLog, User, UserRole, AuditLog, L
 const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
   const [view, setView] = useState<'overview' | 'projects' | 'project-detail' | 'clients' | 'users' | 'audit' | 'requests'>('overview');
-  const [showModal, setShowModal] = useState<'project' | 'edit-project' | 'client' | 'log' | 'user' | 'request-review' | null>(null);
+  const [showModal, setShowModal] = useState<'project' | 'edit-project' | 'client' | 'log' | 'user' | null>(null);
   
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [selectedRequest, setSelectedRequest] = useState<ChangeRequest | null>(null);
-
   const [loading, setLoading] = useState(true);
+  
   const [projects, setProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [logs, setLogs] = useState<ProjectLog[]>([]);
@@ -44,7 +43,7 @@ const AdminDashboard: React.FC = () => {
       setAuditLogs(a);
       setRequests(r);
     } catch (error) {
-      console.error("Erro fatal de carregamento:", error);
+      console.error("Erro ao sincronizar banco:", error);
     } finally {
       setLoading(false);
     }
@@ -55,14 +54,12 @@ const AdminDashboard: React.FC = () => {
   }, []);
 
   const handleDeleteUser = async (uid: string) => {
-    if (!window.confirm("CONFIRMAR EXCLUSÃO CRITICAL: Remover acesso de " + uid + "?")) return;
+    if (!window.confirm("AÇÃO IRREVERSÍVEL: Remover este usuário do sistema?")) return;
     try {
       await db.deleteUser(uid, user?.name || 'Admin');
-      const updatedUsers = users.filter(u => u.id !== uid);
-      setUsers(updatedUsers);
-      await loadData();
+      setUsers(prev => prev.filter(u => u.id !== uid));
     } catch (e) {
-      alert("Falha na comunicação com Firestore para deleção.");
+      alert("Erro ao processar exclusão no Firestore.");
     }
   };
 
@@ -150,15 +147,6 @@ const AdminDashboard: React.FC = () => {
     loadData();
   };
 
-  const getStatusColor = (status: ProjectStatus) => {
-    switch(status) {
-      case ProjectStatus.PRODUCTION: return 'bg-emerald-50 text-emerald-600 border-emerald-100';
-      case ProjectStatus.DEVELOPMENT: return 'bg-blue-50 text-blue-600 border-blue-100';
-      case ProjectStatus.FINISHED: return 'bg-purple-50 text-purple-600 border-purple-100';
-      default: return 'bg-slate-50 text-slate-600 border-slate-100';
-    }
-  };
-
   const SidebarContent = (
     <nav className="space-y-1">
       <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-3 mb-2">Administração</div>
@@ -191,36 +179,36 @@ const AdminDashboard: React.FC = () => {
     </nav>
   );
 
-  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50 font-bold text-slate-400 tracking-widest uppercase text-xs">Ajustando Contexto Root...</div>;
+  if (loading) return <div className="h-screen flex items-center justify-center bg-white font-black text-slate-300 uppercase tracking-widest text-xs">Sincronizando Ecossistema...</div>;
 
   return (
     <Layout title="Control Hub Admin" roleTag="Acesso Root" sidebar={SidebarContent}>
       
       {view === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 animate-in fade-in duration-700">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 animate-in fade-in duration-500">
           <div className="lg:col-span-3 space-y-8">
              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Projetos Ativos</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Projetos</p>
                   <p className="text-4xl font-black text-slate-900">{projects.length}</p>
                 </div>
                 <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Tickets Abertos</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Tickets</p>
                   <p className="text-4xl font-black text-blue-600">{requests.filter(r => r.status === RequestStatus.OPEN).length}</p>
                 </div>
                 <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Logs de Rede</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Atividade</p>
                   <p className="text-4xl font-black text-slate-900">{logs.length}</p>
                 </div>
                 <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Total Parceiros</p>
+                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Parceiros</p>
                    <p className="text-4xl font-black text-slate-900">{clients.length}</p>
                 </div>
              </div>
-             <div className="bg-white rounded-[40px] border border-slate-200 p-12">
-               <h3 className="text-xl font-bold mb-10 text-slate-900 flex items-center">
-                 <div className="w-2.5 h-2.5 bg-blue-500 rounded-full mr-4 animate-pulse"></div>
-                 Atividade Recente do Pipeline
+             <div className="bg-white rounded-[40px] border border-slate-200 p-12 shadow-sm">
+               <h3 className="text-xl font-black mb-10 text-slate-900 flex items-center">
+                 <div className="w-2.5 h-2.5 bg-blue-500 rounded-full mr-4 animate-pulse shadow-lg shadow-blue-500/50"></div>
+                 Status da Infraestrutura
                </h3>
                <div className="space-y-6">
                  {logs.slice(0, 5).map(l => (
@@ -232,7 +220,7 @@ const AdminDashboard: React.FC = () => {
                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{new Date(l.createdAt).toLocaleString()}</p>
                         </div>
                      </div>
-                     <span className="text-[10px] font-black text-slate-400 bg-white px-3 py-1 rounded-lg border uppercase">{l.logType}</span>
+                     <span className="text-[10px] font-black text-slate-400 bg-white px-3 py-1 rounded-lg border uppercase tracking-widest">{l.logType}</span>
                    </div>
                  ))}
                </div>
@@ -252,7 +240,9 @@ const AdminDashboard: React.FC = () => {
             {projects.map(p => (
               <div key={p.id} className="bg-white rounded-[40px] border border-slate-200 p-12 flex flex-col group shadow-sm hover:shadow-2xl transition-all">
                  <div className="flex justify-between items-start mb-10">
-                    <span className={`px-4 py-1.5 text-[10px] font-black rounded-xl uppercase tracking-widest border ${getStatusColor(p.status)}`}>{p.status}</span>
+                    <span className={`px-4 py-1.5 text-[10px] font-black rounded-xl uppercase tracking-widest border ${
+                      p.status === ProjectStatus.PRODUCTION ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'
+                    }`}>{p.status}</span>
                  </div>
                  <h3 className="text-2xl font-black text-slate-900 mb-4 group-hover:text-blue-600 transition-colors">{p.name}</h3>
                  <p className="text-slate-500 mb-12 line-clamp-3 font-medium leading-relaxed">{p.description}</p>
@@ -264,7 +254,7 @@ const AdminDashboard: React.FC = () => {
       )}
 
       {view === 'project-detail' && activeProject && (
-        <div className="space-y-10 animate-in fade-in duration-500">
+        <div className="space-y-10 animate-in fade-in">
            <div className="flex justify-between items-center">
              <button onClick={() => setView('projects')} className="text-slate-400 hover:text-slate-900 font-black text-xs flex items-center space-x-2">
                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="m15 18-6-6 6-6"/></svg>
@@ -278,57 +268,61 @@ const AdminDashboard: React.FC = () => {
 
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
               <div className="lg:col-span-2 space-y-10">
-                <div className="bg-white rounded-[48px] p-16 border border-slate-200">
+                <div className="bg-white rounded-[48px] p-16 border border-slate-200 shadow-sm">
                   <h2 className="text-5xl font-black text-slate-900 tracking-tighter mb-8">{activeProject.name}</h2>
-                  <div className="prose prose-slate max-w-none text-lg text-slate-600 font-medium">
+                  <div className="prose prose-slate max-w-none text-lg text-slate-600 font-medium leading-relaxed">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeProject.description}</ReactMarkdown>
                   </div>
-                  <div className="mt-12 pt-8 border-t border-slate-100">
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Stacks do Ecossistema</h4>
+                  <div className="mt-12 pt-10 border-t border-slate-100">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Arquitetura do Projeto</h4>
                     <div className="flex flex-wrap gap-2">
                       {activeProject.stack.split(',').map(s => (
-                        <span key={s} className="px-4 py-2 bg-slate-50 border rounded-xl text-xs font-bold text-slate-600">{s.trim()}</span>
+                        <span key={s} className="px-5 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-black text-slate-700 shadow-sm">{s.trim().toUpperCase()}</span>
                       ))}
                     </div>
                   </div>
                 </div>
                 
-                <div className="bg-white rounded-[48px] p-12 border border-slate-200 relative">
-                  <div className="flex justify-between items-center mb-10">
-                    <h3 className="text-xl font-black">Timeline de Engenharia</h3>
+                <div className="bg-white rounded-[48px] p-12 border border-slate-200 shadow-sm">
+                  <div className="flex justify-between items-center mb-12">
+                    <h3 className="text-xl font-black tracking-tight">Timeline de Engenharia</h3>
+                    <button onClick={() => setShowModal('log')} className="text-blue-600 font-black text-[10px] uppercase tracking-widest hover:underline">+ Adicionar log rápido</button>
                   </div>
                   <div className="space-y-6">
-                    {logs.filter(l => l.projectId === activeProject.id).length === 0 && <p className="text-slate-400 text-sm italic">Nenhum log registrado para este projeto.</p>}
-                    {logs.filter(l => l.projectId === activeProject.id).map(log => (
-                      <div key={log.id} className="p-8 bg-slate-50 rounded-[32px] border border-transparent hover:border-slate-200 transition-all">
-                        <div className="flex justify-between items-start mb-4">
-                           <h4 className="text-xl font-black text-slate-900">{log.title}</h4>
-                           <div className="flex space-x-2">
-                             {!log.visibleToClient && <span className="px-2 py-1 bg-rose-50 text-rose-500 text-[8px] font-black rounded-md border border-rose-100">INTERNAL ONLY</span>}
-                             <span className="px-3 py-1 bg-white border rounded-lg text-[10px] font-black text-slate-400">{log.logType}</span>
-                           </div>
+                    {logs.filter(l => l.projectId === activeProject.id).length === 0 ? (
+                      <p className="text-slate-400 text-sm italic py-10 text-center">Nenhum evento registrado nesta timeline.</p>
+                    ) : (
+                      logs.filter(l => l.projectId === activeProject.id).map(log => (
+                        <div key={log.id} className="p-8 bg-slate-50 rounded-[32px] border border-transparent hover:border-slate-200 transition-all">
+                          <div className="flex justify-between items-start mb-4">
+                             <h4 className="text-xl font-black text-slate-900">{log.title}</h4>
+                             <div className="flex space-x-2">
+                               {!log.visibleToClient && <span className="px-2 py-1 bg-rose-50 text-rose-500 text-[8px] font-black rounded-md border border-rose-100 uppercase">Privado</span>}
+                               <span className="px-3 py-1 bg-white border rounded-lg text-[10px] font-black text-slate-400 uppercase">{log.logType}</span>
+                             </div>
+                          </div>
+                          <div className="prose prose-sm max-w-none text-slate-600 leading-relaxed font-medium">
+                             <ReactMarkdown>{log.description}</ReactMarkdown>
+                          </div>
                         </div>
-                        <div className="prose prose-sm max-w-none text-slate-500 leading-relaxed">
-                           <ReactMarkdown>{log.description}</ReactMarkdown>
-                        </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
 
               <div className="space-y-8">
-                 <div className="bg-slate-900 rounded-[40px] p-10 text-white border border-slate-800">
-                    <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.3em] mb-6">Métricas Lighthouse</h4>
-                    <div className="space-y-6">
+                 <div className="bg-slate-900 rounded-[40px] p-10 text-white border border-slate-800 shadow-2xl">
+                    <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.3em] mb-10">Score Lighthouse</h4>
+                    <div className="space-y-8">
                        {[
                          {l: 'Performance', v: activeProject.lighthouseMetrics?.performance},
                          {l: 'Acessibilidade', v: activeProject.lighthouseMetrics?.accessibility},
                          {l: 'Boas Práticas', v: activeProject.lighthouseMetrics?.bestPractices},
                          {l: 'SEO', v: activeProject.lighthouseMetrics?.seo}
                        ].map(m => (
-                         <div key={m.l} className="space-y-2">
-                            <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
+                         <div key={m.l} className="space-y-3">
+                            <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.1em]">
                                <span className="text-slate-500">{m.l}</span>
                                <span className={m.v && m.v >= 90 ? 'text-emerald-400' : 'text-amber-400'}>{m.v || 0}%</span>
                             </div>
@@ -339,25 +333,54 @@ const AdminDashboard: React.FC = () => {
                        ))}
                     </div>
                  </div>
-                 <div className="bg-white rounded-[40px] p-10 border border-slate-200">
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6">Monitoramento</h4>
+                 <div className="bg-white rounded-[40px] p-10 border border-slate-200 shadow-sm">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-8">Conectividade</h4>
                     <div className="space-y-4">
-                      {activeProject.productionUrl && (
-                        <a href={activeProject.productionUrl} target="_blank" className="block p-4 bg-slate-50 rounded-2xl border hover:border-blue-500 transition-all">
-                           <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Produção Ativa</p>
-                           <p className="text-sm font-bold text-slate-800 truncate">{activeProject.productionUrl}</p>
+                      {activeProject.productionUrl ? (
+                        <a href={activeProject.productionUrl} target="_blank" className="block p-5 bg-slate-50 rounded-2xl border hover:border-blue-500 transition-all group">
+                           <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">PRODUÇÃO</p>
+                           <p className="text-sm font-bold text-slate-800 truncate group-hover:text-blue-600">{activeProject.productionUrl}</p>
                         </a>
+                      ) : (
+                        <div className="p-5 bg-slate-50 rounded-2xl border text-slate-400 text-xs font-bold uppercase italic tracking-widest">Sem link de produção</div>
                       )}
                       {activeProject.figmaUrl && (
-                        <a href={activeProject.figmaUrl} target="_blank" className="block p-4 bg-slate-50 rounded-2xl border hover:border-purple-500 transition-all">
-                           <p className="text-[10px] font-black text-purple-600 uppercase tracking-widest mb-1">Design Hub (Figma)</p>
-                           <p className="text-sm font-bold text-slate-800 truncate">Clique para visualizar</p>
+                        <a href={activeProject.figmaUrl} target="_blank" className="block p-5 bg-slate-50 rounded-2xl border hover:border-purple-500 transition-all group">
+                           <p className="text-[10px] font-black text-purple-600 uppercase tracking-widest mb-1">DESIGN / FIGMA</p>
+                           <p className="text-sm font-bold text-slate-800 truncate group-hover:text-purple-600">Abrir prototipagem</p>
                         </a>
                       )}
                     </div>
                  </div>
               </div>
            </div>
+        </div>
+      )}
+
+      {view === 'requests' && (
+        <div className="space-y-10 animate-in slide-in-from-bottom-8">
+           <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Central de Solicitações</h2>
+           {requests.length === 0 ? (
+             <div className="bg-white rounded-[48px] p-32 border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
+                <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mb-6">
+                   <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <h3 className="text-xl font-black text-slate-400 uppercase tracking-widest">Nenhum chamado aberto</h3>
+                <p className="text-slate-400 font-medium mt-2">Tudo em conformidade no ecossistema.</p>
+             </div>
+           ) : (
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               {requests.map(r => (
+                 <div key={r.id} className="bg-white p-10 rounded-[40px] border border-slate-200 shadow-sm">
+                   <div className="flex justify-between mb-6">
+                      <span className="px-4 py-1.5 bg-blue-50 text-blue-600 text-[10px] font-black rounded-xl border border-blue-100 uppercase tracking-widest">{r.status}</span>
+                   </div>
+                   <h4 className="text-2xl font-black mb-4">{r.title}</h4>
+                   <p className="text-slate-500 font-medium">{r.description}</p>
+                 </div>
+               ))}
+             </div>
+           )}
         </div>
       )}
 
@@ -373,26 +396,30 @@ const AdminDashboard: React.FC = () => {
                   <tr>
                     <th className="px-12 py-10">Razão Social</th>
                     <th className="px-12 py-10">Key Contact</th>
-                    <th className="px-12 py-10">E-mail Operacional</th>
+                    <th className="px-12 py-10">E-mail</th>
                     <th className="px-12 py-10 text-right">Projetos</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {clients.map(c => (
-                    <tr key={c.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-12 py-10">
-                        <p className="text-slate-900 font-black text-lg">{c.companyName}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">ID: {c.id}</p>
-                      </td>
-                      <td className="px-12 py-10 font-bold text-slate-600">{c.contactName}</td>
-                      <td className="px-12 py-10 font-bold text-slate-600">{c.email}</td>
-                      <td className="px-12 py-10 text-right">
-                        <span className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-xs font-black border border-blue-100">
-                          {projects.filter(p => p.clientId === c.id).length} ATIVOS
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                <tbody className="divide-y divide-slate-100">
+                  {clients.length === 0 ? (
+                    <tr><td colSpan={4} className="p-20 text-center font-black text-slate-300 uppercase tracking-widest">Nenhum parceiro cadastrado</td></tr>
+                  ) : (
+                    clients.map(c => (
+                      <tr key={c.id} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="px-12 py-10">
+                          <p className="text-slate-900 font-black text-lg">{c.companyName}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">ID: {c.id}</p>
+                        </td>
+                        <td className="px-12 py-10 font-bold text-slate-600">{c.contactName}</td>
+                        <td className="px-12 py-10 font-bold text-slate-600">{c.email}</td>
+                        <td className="px-12 py-10 text-right">
+                          <span className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-xs font-black border border-blue-100">
+                            {projects.filter(p => p.clientId === c.id).length} ATIVOS
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
              </table>
           </div>
@@ -420,10 +447,10 @@ const AdminDashboard: React.FC = () => {
                   <tr key={u.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-12 py-10">
                       <p className="text-slate-900 font-black text-lg">{u.name}</p>
-                      <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-2 rounded-md border">UID: {u.id}</span>
+                      <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-2 rounded-md border tracking-tighter">UID: {u.id}</span>
                     </td>
                     <td className="px-12 py-10">
-                       <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black border uppercase ${u.role === UserRole.ADMIN ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>{u.role}</span>
+                       <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black border uppercase tracking-widest ${u.role === UserRole.ADMIN ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>{u.role}</span>
                     </td>
                     <td className="px-12 py-10 text-slate-600 font-bold italic">{clients.find(c => c.id === u.clientId)?.companyName || 'Hub Core Team'}</td>
                     <td className="px-12 py-10 text-right">
@@ -437,7 +464,87 @@ const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* MODALS REBUILT FOR EDITING AND PERSONAL PROJECTS */}
+      {view === 'audit' && (
+        <div className="space-y-10 animate-in fade-in">
+           <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Logs de Auditoria Root</h2>
+           <div className="bg-white rounded-[48px] border border-slate-200 overflow-hidden shadow-sm">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                  <tr>
+                    <th className="px-12 py-8">Timestamp</th>
+                    <th className="px-12 py-8">Operador</th>
+                    <th className="px-12 py-8">Ação</th>
+                    <th className="px-12 py-8">Detalhes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {auditLogs.length === 0 ? (
+                    <tr><td colSpan={4} className="p-20 text-center font-black text-slate-300 uppercase tracking-widest">Nenhum registro de auditoria</td></tr>
+                  ) : (
+                    auditLogs.map(a => (
+                      <tr key={a.id} className="hover:bg-slate-50/40 transition-colors">
+                        <td className="px-12 py-8 text-xs font-bold text-slate-400">{new Date(a.createdAt).toLocaleString()}</td>
+                        <td className="px-12 py-8 text-sm font-black text-slate-900">{a.userName}</td>
+                        <td className="px-12 py-8"><span className="px-4 py-1.5 bg-slate-900 text-white text-[10px] font-black rounded-xl uppercase tracking-widest">{a.action}</span></td>
+                        <td className="px-12 py-8 text-xs font-medium text-slate-500">{a.details}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+           </div>
+        </div>
+      )}
+
+      {/* MODAL USER (AUTENTICAR) */}
+      {showModal === 'user' && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-2xl flex items-center justify-center p-6 z-50">
+          <div className="bg-white rounded-[48px] w-full max-w-2xl p-16 shadow-2xl animate-in zoom-in-95 duration-300">
+            <h3 className="text-3xl font-black mb-10 tracking-tighter">Vincular Novo Perfil</h3>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              await db.saveUser({
+                id: f.get('uid') as string,
+                name: f.get('name') as string,
+                email: f.get('email') as string,
+                role: f.get('role') as UserRole,
+                isActive: true,
+                clientId: (f.get('clientId') as string) || undefined,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+              }, user?.name || 'Admin');
+              setShowModal(null);
+              loadData();
+            }} className="space-y-8">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">UID Firebase (Auth)</label>
+                <input name="uid" placeholder="Cole o UID do Authentication" className="w-full p-6 bg-slate-50 border-2 border-blue-100 rounded-[28px] font-black font-mono text-sm focus:border-blue-600 outline-none" required />
+              </div>
+              <div className="grid grid-cols-2 gap-8">
+                <input name="name" placeholder="Nome Completo" className="w-full p-6 bg-slate-50 border rounded-[28px] font-bold" required />
+                <input name="email" placeholder="E-mail de Login" className="w-full p-6 bg-slate-50 border rounded-[28px] font-bold" required />
+              </div>
+              <div className="grid grid-cols-2 gap-8">
+                <select name="role" className="w-full p-6 bg-slate-50 border rounded-[28px] font-black">
+                  <option value={UserRole.CLIENT}>Cliente Parceiro</option>
+                  <option value={UserRole.ADMIN}>Administrador Root</option>
+                </select>
+                <select name="clientId" className="w-full p-6 bg-slate-50 border rounded-[28px] font-black">
+                  <option value="">Uso Interno (Admin)</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+                </select>
+              </div>
+              <div className="flex space-x-6 pt-10">
+                <button type="button" onClick={() => setShowModal(null)} className="flex-1 py-6 font-bold text-slate-400">Cancelar</button>
+                <button type="submit" className="flex-1 py-6 bg-blue-600 text-white rounded-[28px] font-black shadow-2xl">Confirmar Vínculo</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PROJECT */}
       {showModal === 'project' && (
         <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-2xl flex items-center justify-center p-6 z-50 overflow-y-auto">
           <div className="bg-white rounded-[48px] w-full max-w-4xl p-16 shadow-2xl my-8 animate-in zoom-in-95 duration-300">
@@ -452,14 +559,10 @@ const AdminDashboard: React.FC = () => {
                       {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
                     </select>
                     <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Perf %</label>
-                        <input name="perf" type="number" className="w-full p-4 bg-slate-50 border rounded-xl font-bold" defaultValue="90" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Acc %</label>
-                        <input name="acc" type="number" className="w-full p-4 bg-slate-50 border rounded-xl font-bold" defaultValue="95" />
-                      </div>
+                      <input name="perf" type="number" placeholder="Perf %" className="w-full p-4 bg-slate-50 border rounded-xl font-bold" />
+                      <input name="acc" type="number" placeholder="Acc %" className="w-full p-4 bg-slate-50 border rounded-xl font-bold" />
+                      <input name="bp" type="number" placeholder="Pract %" className="w-full p-4 bg-slate-50 border rounded-xl font-bold" />
+                      <input name="seo" type="number" placeholder="SEO %" className="w-full p-4 bg-slate-50 border rounded-xl font-bold" />
                     </div>
                  </div>
                  <div className="space-y-8">
@@ -481,6 +584,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* MODAL EDIT PROJECT */}
       {showModal === 'edit-project' && activeProject && (
         <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-2xl flex items-center justify-center p-6 z-50 overflow-y-auto">
            <div className="bg-white rounded-[48px] w-full max-w-4xl p-16 shadow-2xl my-8 animate-in zoom-in-95 duration-300">
@@ -516,6 +620,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* MODAL CLIENT */}
       {showModal === 'client' && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-2xl flex items-center justify-center p-6 z-50">
            <div className="bg-white rounded-[48px] w-full max-w-xl p-16 shadow-2xl animate-in zoom-in-95 duration-300">
@@ -535,6 +640,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* MODAL LOG */}
       {showModal === 'log' && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-2xl flex items-center justify-center p-6 z-50">
            <div className="bg-white rounded-[48px] w-full max-w-xl p-16 shadow-2xl animate-in zoom-in-95 duration-300">
