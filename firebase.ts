@@ -11,9 +11,7 @@ const firebaseConfig = {
   appId: "1:446514075562:web:865f6d349f04c49c9dbdd3"
 };
 
-// Inicialização atômica
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// Exportações diretas das instâncias registradas
 export const auth = getAuth(app);
 export const db_firestore = getFirestore(app);

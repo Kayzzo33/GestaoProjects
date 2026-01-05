@@ -5,7 +5,8 @@ import remarkGfm from 'remark-gfm';
 import Layout from '../components/Layout';
 import { db } from '../db';
 import ChatPanel from '../components/ChatPanel';
-import { useAuth } from '../App';
+// Fix: Import useAuth from AuthContext instead of App
+import { useAuth } from '../contexts/AuthContext.tsx';
 import { ProjectStatus, Project, Client, ProjectLog, User, UserRole, AuditLog, LogType, ChangeRequest, RequestStatus } from '../types';
 
 const AdminDashboard: React.FC = () => {

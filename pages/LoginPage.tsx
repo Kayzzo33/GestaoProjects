@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../App';
+import { useAuth } from '../contexts/AuthContext.tsx';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');

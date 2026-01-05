@@ -1,6 +1,7 @@
 
 import React from 'react';
-import { useAuth } from '../App';
+// Fix: Import useAuth from AuthContext instead of App
+import { useAuth } from '../contexts/AuthContext.tsx';
 
 interface LayoutProps {
   children: React.ReactNode;

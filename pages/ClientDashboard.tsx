@@ -5,7 +5,8 @@ import remarkGfm from 'remark-gfm';
 import Layout from '../components/Layout';
 import { db } from '../db';
 import ChatPanel from '../components/ChatPanel';
-import { useAuth } from '../App';
+// Fix: Import useAuth from AuthContext instead of App
+import { useAuth } from '../contexts/AuthContext.tsx';
 import { Project, ProjectLog, ProjectStatus, LogType, ChangeRequest, RequestStatus } from '../types';
 
 const LighthouseGauge = ({ value, label }: { value: number | undefined; label: string }) => {

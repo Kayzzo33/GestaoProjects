@@ -1,4 +1,3 @@
-
 import { 
   collection, 
   getDocs, 
@@ -13,11 +12,10 @@ import {
   orderBy,
   limit
 } from "firebase/firestore";
-import { db_firestore } from "./firebase";
-import { User, Client, Project, ProjectLog, UserRole, ProjectStatus, AuditLog, LogType, ChangeRequest, RequestStatus } from './types';
+import { db_firestore } from "./firebase.ts";
+import { User, Client, Project, ProjectLog, UserRole, ProjectStatus, AuditLog, LogType, ChangeRequest, RequestStatus } from './types.ts';
 
 class Database {
-  // --- AUDITORIA ---
   async addAudit(action: string, type: any, id: string, userName: string, details: string) {
     try {
       await addDoc(collection(db_firestore, "auditLogs"), {
@@ -43,7 +41,6 @@ class Database {
     }
   }
 
-  // --- USUÁRIOS ---
   async getUsers(): Promise<User[]> {
     try {
       const snap = await getDocs(collection(db_firestore, "users"));
@@ -71,7 +68,6 @@ class Database {
     await this.addAudit('DELETE_USER', 'USER', uid, adminName, `Usuário removido da matriz de acessos.`);
   }
 
-  // --- CLIENTES ---
   async getClients(): Promise<Client[]> {
     try {
       const snap = await getDocs(collection(db_firestore, "clients"));
@@ -95,7 +91,6 @@ class Database {
     await this.addAudit('UPDATE_CLIENT', 'CLIENT', clientId, adminName, `Dados do cliente atualizados.`);
   }
 
-  // --- PROJETOS ---
   async getProjects(includeArchived = false): Promise<Project[]> {
     try {
       const q = includeArchived 
@@ -124,7 +119,6 @@ class Database {
     return docRef.id;
   }
 
-  // --- SOLICITAÇÕES (TICKETS) ---
   async addChangeRequest(data: Omit<ChangeRequest, 'id' | 'createdAt' | 'updatedAt'>) {
     await addDoc(collection(db_firestore, "changeRequests"), {
       ...data,
@@ -150,7 +144,6 @@ class Database {
     await this.addAudit('UPDATE_REQUEST', 'REQUEST', requestId, adminName, `Ticket atualizado para ${status}`);
   }
 
-  // --- LOGS ---
   async getLogs(projectId?: string): Promise<ProjectLog[]> {
     try {
       const q = projectId 

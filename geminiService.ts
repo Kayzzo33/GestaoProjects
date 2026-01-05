@@ -1,77 +1,72 @@
-
 import { GoogleGenAI } from "@google/genai";
-import { User, UserRole } from "./types";
-import { db } from "./db";
+import { User, UserRole } from "./types.ts";
+import { db } from "./db.ts";
 
 export class GeminiService {
-  // Always create a new GoogleGenAI instance right before making an API call
-  // to ensure it uses the most up-to-date API key.
-
   async askAdminAI(user: User, prompt: string): Promise<string> {
     if (user.role !== UserRole.ADMIN) throw new Error("Não autorizado.");
 
-    // Initialize with process.env.API_KEY as per guidelines
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const context = await db.getAdminContext();
+    
     const systemInstruction = `
       Você é o Engenheiro de Inteligência de Projetos do Hub de Controle.
       
-      CONTEXTO DO SISTEMA (FIRESTORE):
+      DADOS ROTAIS (FIRESTORE):
       - Projetos: ${JSON.stringify(context.projects)}
-      - Logs: ${JSON.stringify(context.logs)}
-      - Clientes: ${JSON.stringify(context.clients)}
+      - Logs Recentes: ${JSON.stringify(context.logs)}
+      - Clientes Ativos: ${JSON.stringify(context.clients)}
       
-      REGRAS:
-      1. Responda APENAS com base nos dados reais do banco.
-      2. Use Português do Brasil (PT-BR).
-      3. Seja analítico e aponte riscos operacionais.
+      REGRAS DE OURO:
+      1. Responda APENAS com base nos dados reais do sistema.
+      2. Seja extremamente técnico e analítico.
+      3. Aponte gargalos ou projetos sem atualizações.
+      4. Use Português do Brasil.
     `;
 
     try {
-      // Use gemini-3-pro-preview for advanced reasoning and analytics tasks
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
         contents: prompt,
         config: { systemInstruction, temperature: 0.1 },
       });
-      return response.text || "Sem resposta do motor de IA.";
+      return response.text || "Sem resposta da IA.";
     } catch (error) {
       console.error("Gemini Admin AI Error:", error);
-      return "Erro na comunicação com a IA.";
+      return "Erro na camada de inteligência.";
     }
   }
 
   async askClientAI(user: User, prompt: string): Promise<string> {
     if (user.role !== UserRole.CLIENT || !user.clientId) throw new Error("Não autorizado.");
 
-    // Initialize with process.env.API_KEY as per guidelines
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const context = await db.getClientContext(user.clientId);
-    // Fixed: changed context.updates to context.requests to match the structure returned by db.getClientContext.
+    
     const systemInstruction = `
-      Você é o Intérprete de Status do Cliente do Hub.
+      Você é o Concierge de Status do Cliente. Seu objetivo é traduzir termos técnicos para o parceiro.
       
-      CONTEXTO EXCLUSIVO (FIRESTORE):
-      - Projetos do Cliente: ${JSON.stringify(context.projects)}
-      - Atualizações Visíveis: ${JSON.stringify(context.requests)}
+      CONTEXTO DO PARCEIRO:
+      - Seus Projetos: ${JSON.stringify(context.projects)}
+      - Solicitações em Aberto: ${JSON.stringify(context.requests)}
       
-      REGRAS:
-      1. Não use termos técnicos pesados.
-      2. Foque no progresso da parceria.
-      3. Use Português do Brasil (PT-BR).
+      ESTILO:
+      1. Linguagem executiva e acolhedora.
+      2. Não revele IDs internos ou códigos.
+      3. Foque em datas e progresso visual.
+      4. Use Português do Brasil.
     `;
 
     try {
-      // Use gemini-3-flash-preview for general text and Q&A tasks
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt,
         config: { systemInstruction, temperature: 0.3 },
       });
-      return response.text || "Desculpe, não consegui processar sua dúvida agora.";
+      return response.text || "Desculpe, não consegui analisar o status agora.";
     } catch (error) {
       console.error("Gemini Client AI Error:", error);
-      return "Houve um erro ao consultar o status.";
+      return "Erro de conexão com o assistente.";
     }
   }
 }
