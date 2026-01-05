@@ -43,6 +43,17 @@ service cloud.firestore {
         get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId;
     }
 
+    // Regras para a coleção de Solicitações (Tickets/Chamados)
+    match /changeRequests/{requestId} {
+      allow read, write: if isAdmin();
+      // Clientes podem criar solicitações para si mesmos
+      allow create: if request.auth != null && 
+        request.resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId;
+      // Clientes podem ler suas próprias solicitações
+      allow read: if request.auth != null && 
+        resource.data.clientId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clientId;
+    }
+
     // Regras para a coleção de Auditoria (Apenas Admin)
     match /auditLogs/{logId} {
       allow read, write: if isAdmin();

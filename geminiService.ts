@@ -1,15 +1,12 @@
+
 import { GoogleGenAI } from "@google/genai";
-import { User, UserRole } from "./types";
+import { User, UserRole, ChangeRequest, Project } from "./types";
 import { db } from "./db";
 
 export class GeminiService {
-  // Always create a new GoogleGenAI instance right before making an API call
-  // to ensure it uses the most up-to-date API key.
-
   async askAdminAI(user: User, prompt: string): Promise<string> {
     if (user.role !== UserRole.ADMIN) throw new Error("Não autorizado.");
 
-    // Initialize with process.env.API_KEY as per guidelines
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const context = await db.getAdminContext();
     const systemInstruction = `
@@ -28,7 +25,6 @@ export class GeminiService {
     `;
 
     try {
-      // Use gemini-3-pro-preview for advanced reasoning and analytics tasks
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
         contents: prompt,
@@ -41,13 +37,42 @@ export class GeminiService {
     }
   }
 
+  async suggestTicketResponse(request: ChangeRequest, projectName: string): Promise<string> {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const systemInstruction = `
+      Você é um Senior Tech Support e Gerente de Projetos.
+      Seu objetivo é sugerir uma resposta profissional, empática e técnica para o ticket do cliente.
+      
+      DADOS DO TICKET:
+      - Projeto: ${projectName}
+      - Título: ${request.title}
+      - Descrição: ${request.description}
+      - Tipo: ${request.type}
+      
+      REGRAS:
+      1. Se for um BUG, peça desculpas e informe que a equipe de engenharia já está analisando o rastro de logs.
+      2. Se for uma MELHORIA ou NOVA FUNCIONALIDADE, agradeça a visão estratégica e informe que será avaliado no próximo roadmap.
+      3. Seja conciso e elegante. 
+      4. Comece com "Olá! Agradecemos o contato."
+    `;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: "Gere uma sugestão de resposta para este ticket.",
+        config: { systemInstruction, temperature: 0.7 },
+      });
+      return response.text || "Olá! Recebemos sua solicitação e nossa equipe técnica já está analisando os detalhes. Retornaremos em breve.";
+    } catch (error) {
+      return "Olá! Sua solicitação foi recebida e está em nossa fila de análise prioritária.";
+    }
+  }
+
   async askClientAI(user: User, prompt: string): Promise<string> {
     if (user.role !== UserRole.CLIENT || !user.clientId) throw new Error("Não autorizado.");
 
-    // Initialize with process.env.API_KEY as per guidelines
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const context = await db.getClientContext(user.clientId);
-    // Fixed: changed context.updates to context.requests to match the structure returned by db.getClientContext.
     const systemInstruction = `
       Você é o Intérprete de Status do Cliente do Hub.
       
@@ -62,7 +87,6 @@ export class GeminiService {
     `;
 
     try {
-      // Use gemini-3-flash-preview for general text and Q&A tasks
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt,

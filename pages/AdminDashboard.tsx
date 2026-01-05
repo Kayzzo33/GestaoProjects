@@ -6,6 +6,7 @@ import Layout from '../components/Layout';
 import { db } from '../db';
 import ChatPanel from '../components/ChatPanel';
 import { useAuth } from '../App';
+import { geminiService } from '../geminiService';
 import { ProjectStatus, Project, Client, ProjectLog, User, UserRole, AuditLog, LogType, ChangeRequest, RequestStatus } from '../types';
 
 const LighthouseGauge = ({ value, label }: { value: number | undefined; label: string }) => {
@@ -42,6 +43,7 @@ const AdminDashboard: React.FC = () => {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [aiLoading, setAiLoading] = useState<string | null>(null);
   
   const [projects, setProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -49,6 +51,9 @@ const AdminDashboard: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [requests, setRequests] = useState<ChangeRequest[]>([]);
+  
+  // State local para gerenciar os textos de resposta dos tickets antes de salvar
+  const [requestResponses, setRequestResponses] = useState<Record<string, string>>({});
 
   const activeProject = useMemo(() => 
     projects.find(p => p.id === selectedProjectId) || null
@@ -77,6 +82,13 @@ const AdminDashboard: React.FC = () => {
       setUsers(u);
       setAuditLogs(a);
       setRequests(r);
+
+      // Sincroniza comentários existentes para o estado local
+      const responses: Record<string, string> = {};
+      r.forEach(req => {
+        if (req.adminComment) responses[req.id] = req.adminComment;
+      });
+      setRequestResponses(responses);
     } catch (error) {
       console.error("Erro ao sincronizar banco:", error);
     } finally {
@@ -173,6 +185,14 @@ const AdminDashboard: React.FC = () => {
     }, user?.name || 'Admin');
     setShowModal(null);
     loadData();
+  };
+
+  const suggestAIResponse = async (request: ChangeRequest) => {
+    setAiLoading(request.id);
+    const projectName = projects.find(p => p.id === request.projectId)?.name || 'Projeto Desconhecido';
+    const suggestion = await geminiService.suggestTicketResponse(request, projectName);
+    setRequestResponses(prev => ({ ...prev, [request.id]: suggestion }));
+    setAiLoading(null);
   };
 
   const SidebarContent = (
@@ -494,18 +514,59 @@ const AdminDashboard: React.FC = () => {
            ) : (
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                {requests.map(r => (
-                 <div key={r.id} className="bg-white p-12 rounded-[48px] border border-slate-200 shadow-sm">
+                 <div key={r.id} className="bg-white p-12 rounded-[48px] border border-slate-200 shadow-sm flex flex-col">
                     <div className="flex justify-between mb-8">
                       <span className="px-4 py-1.5 bg-blue-50 text-blue-600 text-[10px] font-black rounded-xl border border-blue-100 uppercase tracking-widest">{r.status}</span>
                       <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">BY: {clients.find(c => c.id === r.clientId)?.companyName}</span>
                     </div>
                     <h4 className="text-2xl font-black mb-4 tracking-tight">{r.title}</h4>
-                    <p className="text-slate-500 font-medium mb-10 leading-relaxed">{r.description}</p>
+                    <p className="text-slate-500 font-medium mb-10 leading-relaxed bg-slate-50 p-6 rounded-3xl border border-slate-100">{r.description}</p>
+                    
+                    <div className="flex-1 space-y-4 mb-8">
+                       <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Resposta do Admin</label>
+                          <button 
+                            onClick={() => suggestAIResponse(r)}
+                            disabled={aiLoading === r.id}
+                            className={`text-[10px] font-black flex items-center space-x-2 px-4 py-2 rounded-xl border border-blue-100 transition-all ${
+                              aiLoading === r.id ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white hover:shadow-lg'
+                            }`}
+                          >
+                             <span>{aiLoading === r.id ? '🤖 IA PENSANDO...' : '🤖 IA: SUGERIR RESPOSTA'}</span>
+                          </button>
+                       </div>
+                       <textarea 
+                         value={requestResponses[r.id] || ''}
+                         onChange={(e) => setRequestResponses(prev => ({ ...prev, [r.id]: e.target.value }))}
+                         className="w-full p-6 bg-white border-2 border-slate-100 rounded-3xl text-sm font-medium outline-none focus:border-blue-500 h-32 resize-none"
+                         placeholder="Escreva ou peça ajuda à IA..."
+                       />
+                    </div>
+
                     <div className="flex space-x-4 pt-8 border-t border-slate-50">
-                      <button onClick={async () => {
-                        await db.updateRequestStatus(r.id, RequestStatus.DONE, 'Finalizado via Admin', user?.name || 'Admin');
-                        loadData();
-                      }} className="bg-slate-900 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest">Marcar Concluído</button>
+                      <button 
+                        onClick={async () => {
+                          const status = r.status === RequestStatus.DONE ? RequestStatus.OPEN : RequestStatus.DONE;
+                          await db.updateRequestStatus(r.id, status, requestResponses[r.id] || '', user?.name || 'Admin');
+                          loadData();
+                        }} 
+                        className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                          r.status === RequestStatus.DONE 
+                            ? 'bg-slate-100 text-slate-500 hover:bg-slate-200' 
+                            : 'bg-slate-900 text-white hover:bg-black shadow-xl'
+                        }`}
+                      >
+                        {r.status === RequestStatus.DONE ? 'Reabrir Ticket' : 'Finalizar Ticket'}
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          await db.updateRequestStatus(r.id, r.status, requestResponses[r.id] || '', user?.name || 'Admin');
+                          alert("Resposta salva e visível para o cliente.");
+                        }}
+                        className="flex-1 py-4 bg-blue-50 text-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest border border-blue-100 hover:bg-blue-600 hover:text-white transition-all"
+                      >
+                        Salvar Resposta
+                      </button>
                     </div>
                  </div>
                ))}

@@ -135,18 +135,29 @@ class Database {
 
   async getChangeRequests(clientId?: string): Promise<ChangeRequest[]> {
     try {
+      // Nota: Removido orderBy da query para evitar necessidade de índices manuais iniciais.
+      // A ordenação é feita em memória para garantir visibilidade total.
       const q = clientId 
-        ? query(collection(db_firestore, "changeRequests"), where("clientId", "==", clientId), orderBy("createdAt", "desc"))
-        : query(collection(db_firestore, "changeRequests"), orderBy("createdAt", "desc"));
+        ? query(collection(db_firestore, "changeRequests"), where("clientId", "==", clientId))
+        : collection(db_firestore, "changeRequests");
       
       const snap = await getDocs(q);
-      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChangeRequest));
-    } catch (e) { return []; }
+      return snap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as ChangeRequest))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch (e) { 
+      console.error("Erro ao carregar solicitações:", e);
+      return []; 
+    }
   }
 
   async updateRequestStatus(requestId: string, status: RequestStatus, comment: string, adminName: string) {
     const docRef = doc(db_firestore, "changeRequests", requestId);
-    await updateDoc(docRef, { status, adminComment: comment, updatedAt: new Date().toISOString() });
+    await updateDoc(docRef, { 
+      status, 
+      adminComment: comment, 
+      updatedAt: new Date().toISOString() 
+    });
     await this.addAudit('UPDATE_REQUEST', 'REQUEST', requestId, adminName, `Ticket atualizado para ${status}`);
   }
 

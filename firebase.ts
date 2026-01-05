@@ -1,6 +1,7 @@
-import { initializeApp, getApp, getApps } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+// Fix: Use @firebase/app directly to ensure modular exports are recognized if firebase/app is mapping to compat
+import { initializeApp, getApp, getApps } from "@firebase/app";
+import { getAuth } from "@firebase/auth";
+import { getFirestore } from "@firebase/firestore";
 
 // Configuração do projeto gestaoprojects
 const firebaseConfig = {
@@ -13,7 +14,6 @@ const firebaseConfig = {
 };
 
 // Fix: Initializing Firebase app with check for existing instances to comply with v9+ Modular SDK
-// Using named imports initializeApp, getApp, and getApps from 'firebase/app'
 const app = getApps().length > 0 
   ? getApp() 
   : initializeApp(firebaseConfig);

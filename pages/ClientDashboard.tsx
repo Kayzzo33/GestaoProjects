@@ -62,7 +62,7 @@ const ClientDashboard: React.FC = () => {
       }
     }
     loadData();
-  }, [user?.clientId]);
+  }, [user?.clientId, activeTab]);
 
   const rankInfo = useMemo(() => {
     const count = context.projects.length;
@@ -259,11 +259,25 @@ const ClientDashboard: React.FC = () => {
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 px-4">
                 {context.requests.map(r => (
                   <div key={r.id} className="bg-white p-12 rounded-[48px] border border-slate-200 shadow-sm flex flex-col group hover:shadow-2xl hover:-translate-y-1 transition-all duration-500">
-                     <span className={`self-start px-6 py-2.5 text-[10px] font-black rounded-2xl uppercase tracking-[0.2em] border mb-8 ${
-                        r.status === RequestStatus.OPEN ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                     }`}>{r.status}</span>
+                     <div className="flex justify-between items-start mb-8">
+                        <span className={`px-6 py-2.5 text-[10px] font-black rounded-2xl uppercase tracking-[0.2em] border ${
+                           r.status === RequestStatus.DONE ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'
+                        }`}>{r.status}</span>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(r.createdAt).toLocaleDateString()}</span>
+                     </div>
                      <h4 className="text-3xl font-black text-slate-900 mb-4 group-hover:text-blue-600 transition-colors tracking-tighter">{r.title}</h4>
-                     <p className="text-slate-500 font-bold mb-10 leading-relaxed text-lg">{r.description}</p>
+                     <p className="text-slate-500 font-bold mb-8 leading-relaxed text-lg">{r.description}</p>
+                     
+                     {r.adminComment && (
+                       <div className="mt-auto pt-8 border-t border-slate-100">
+                          <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3 flex items-center">
+                             <span className="mr-2">💬</span> Resposta do Hub
+                          </p>
+                          <div className="bg-blue-50/50 p-6 rounded-[32px] border border-blue-100/50 text-slate-700 font-medium text-sm leading-relaxed">
+                             {r.adminComment}
+                          </div>
+                       </div>
+                     )}
                   </div>
                 ))}
              </div>
