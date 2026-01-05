@@ -42,19 +42,19 @@ const Layout: React.FC<LayoutProps> = ({ children, title, roleTag, sidebar }) =>
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-20 bg-white border-b flex items-center justify-between px-10 shrink-0">
+        <header className="h-20 bg-white border-b flex items-center justify-between px-10 shrink-0 shadow-sm z-10">
           <div className="flex items-center space-x-6">
             <h1 className="text-xl font-black text-slate-900 tracking-tight">{title}</h1>
-            <span className="px-3 py-1 bg-blue-50 text-blue-600 text-[10px] font-black rounded-lg uppercase tracking-widest border border-blue-100">
+            <span className="px-3 py-1 bg-blue-50 text-blue-600 text-[10px] font-black rounded-lg uppercase tracking-widest border border-blue-100 shadow-sm">
               {roleTag}
             </span>
           </div>
           <div className="flex items-center space-x-8">
             <div className="text-right">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Status do Servidor</p>
-              <div className="flex items-center justify-end space-x-2">
-                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_#10b981]"></div>
-                <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Ativo & Online</span>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Status Global</p>
+              <div className="flex items-center justify-end space-x-3 bg-emerald-50 px-4 py-1.5 rounded-full border border-emerald-100">
+                <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_12px_rgba(16,185,129,0.8)]"></div>
+                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">SERVIDOR ONLINE</span>
               </div>
             </div>
           </div>
