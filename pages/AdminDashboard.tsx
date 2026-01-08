@@ -35,6 +35,13 @@ const LighthouseGauge = ({ value, label }: { value: number | undefined; label: s
   );
 };
 
+const VipBadge = () => (
+  <div className="inline-flex items-center px-3 py-1 bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 rounded-full shadow-lg shadow-amber-500/20 border border-amber-300 animate-pulse">
+    <span className="text-[8px] font-black text-white uppercase tracking-[0.2em]">VIP PARTNER</span>
+    <svg className="ml-1.5 w-2 h-2 text-white fill-current" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+  </div>
+);
+
 const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
   const [view, setView] = useState<'overview' | 'projects' | 'project-detail' | 'clients' | 'client-detail' | 'users' | 'audit' | 'requests'>('overview');
@@ -52,7 +59,6 @@ const AdminDashboard: React.FC = () => {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [requests, setRequests] = useState<ChangeRequest[]>([]);
   
-  // State local para gerenciar os textos de resposta dos tickets antes de salvar
   const [requestResponses, setRequestResponses] = useState<Record<string, string>>({});
 
   const activeProject = useMemo(() => 
@@ -83,7 +89,6 @@ const AdminDashboard: React.FC = () => {
       setAuditLogs(a);
       setRequests(r);
 
-      // Sincroniza comentários existentes para o estado local
       const responses: Record<string, string> = {};
       r.forEach(req => {
         if (req.adminComment) responses[req.id] = req.adminComment;
@@ -106,15 +111,27 @@ const AdminDashboard: React.FC = () => {
         ...c,
         projectsCount: projects.filter(p => p.clientId === c.id).length
       }))
-      .sort((a, b) => (b.projectsCount || 0) - (a.projectsCount || 0));
+      .sort((a, b) => {
+        // Lógica de Ranking: 
+        // 1. VIPs primeiro
+        // 2. Depois por número de projetos
+        if (a.isVip !== b.isVip) return a.isVip ? -1 : 1;
+        return (b.projectsCount || 0) - (a.projectsCount || 0);
+      });
   }, [clients, projects]);
 
-  const getRankData = (count: number) => {
-    if (count >= 11) return { medal: '💎', category: 'DIAMANTE', color: 'text-cyan-500', bg: 'bg-cyan-50' };
+  const getRankData = (count: number, isVip?: boolean) => {
+    if (isVip) return { medal: '💎', category: 'DIAMANTE VIP', color: 'text-amber-500', bg: 'bg-amber-50' };
+    if (count >= 11) return { medal: '🏆', category: 'ELITE', color: 'text-cyan-500', bg: 'bg-cyan-50' };
     if (count >= 6) return { medal: '🥇', category: 'OURO', color: 'text-amber-500', bg: 'bg-amber-50' };
     if (count >= 3) return { medal: '🥈', category: 'PRATA', color: 'text-slate-400', bg: 'bg-slate-50' };
     if (count >= 1) return { medal: '🥉', category: 'BRONZE', color: 'text-orange-600', bg: 'bg-orange-50' };
     return { medal: '🌱', category: 'INICIANTE', color: 'text-slate-300', bg: 'bg-white' };
+  };
+
+  const toggleVipStatus = async (clientId: string, currentStatus: boolean) => {
+    await db.updateClient(clientId, { isVip: !currentStatus }, user?.name || 'Admin');
+    loadData();
   };
 
   const handleAddProject = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -181,7 +198,8 @@ const AdminDashboard: React.FC = () => {
       contactName: f.get('contactName') as string,
       email: f.get('email') as string,
       phone: f.get('phone') as string,
-      notes: f.get('notes') as string
+      notes: f.get('notes') as string,
+      isVip: f.get('isVip') === 'on'
     }, user?.name || 'Admin');
     setShowModal(null);
     loadData();
@@ -262,13 +280,16 @@ const AdminDashboard: React.FC = () => {
                  </h3>
                  <div className="space-y-4">
                     {clientRanking.slice(0, 5).map((c, idx) => {
-                      const rd = getRankData(c.projectsCount || 0);
+                      const rd = getRankData(c.projectsCount || 0, c.isVip);
                       return (
-                        <div key={c.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div key={c.id} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${c.isVip ? 'bg-amber-50/50 border-amber-200 shadow-inner' : 'bg-slate-50 border-slate-100'}`}>
                           <div className="flex items-center space-x-4">
-                             <span className="text-lg font-black text-slate-300 w-6">#{idx + 1}</span>
+                             <span className={`text-lg font-black w-6 ${c.isVip ? 'text-amber-400' : 'text-slate-300'}`}>#{idx + 1}</span>
                              <div>
-                               <p className="font-black text-slate-900 text-sm">{c.companyName}</p>
+                               <div className="flex items-center space-x-2">
+                                 <p className="font-black text-slate-900 text-sm">{c.companyName}</p>
+                                 {c.isVip && <div className="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>}
+                               </div>
                                <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-widest ${rd.bg} ${rd.color}`}>{rd.category}</span>
                              </div>
                           </div>
@@ -421,14 +442,17 @@ const AdminDashboard: React.FC = () => {
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
              {clients.map(c => {
                const projCount = projects.filter(p => p.clientId === c.id).length;
-               const rd = getRankData(projCount);
+               const rd = getRankData(projCount, c.isVip);
                return (
-                 <div key={c.id} className="bg-white p-10 rounded-[40px] border border-slate-200 shadow-sm group hover:shadow-xl transition-all relative overflow-hidden">
+                 <div key={c.id} className={`p-10 rounded-[40px] border shadow-sm group hover:shadow-xl transition-all relative overflow-hidden ${c.isVip ? 'bg-white border-amber-200 ring-2 ring-amber-100' : 'bg-white border-slate-200'}`}>
                     <div className={`absolute top-0 right-0 p-8 text-3xl opacity-20`}>{rd.medal}</div>
                     <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 mb-8 group-hover:bg-blue-50 group-hover:text-blue-600 transition-all">
                       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
                     </div>
-                    <h3 className="text-2xl font-black text-slate-900 mb-2">{c.companyName}</h3>
+                    <div className="flex flex-col space-y-1 mb-2">
+                       <h3 className="text-2xl font-black text-slate-900 leading-tight">{c.companyName}</h3>
+                       {c.isVip && <VipBadge />}
+                    </div>
                     <p className="text-sm font-bold text-slate-400 mb-8 tracking-tight">{c.contactName} • {c.email}</p>
                     <div className="pt-8 border-t border-slate-50 flex justify-between items-center">
                        <span className={`text-[9px] font-black px-3 py-1 rounded-lg uppercase tracking-widest border ${rd.bg} ${rd.color}`}>{rd.category} ({projCount})</span>
@@ -443,21 +467,34 @@ const AdminDashboard: React.FC = () => {
 
       {view === 'client-detail' && activeClient && (
         <div className="space-y-10 animate-in fade-in">
-           <button onClick={() => setView('clients')} className="text-slate-400 font-black text-[10px] tracking-widest flex items-center space-x-2 hover:text-slate-900 uppercase">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-              <span>Voltar aos Parceiros</span>
-           </button>
+           <div className="flex justify-between items-center">
+             <button onClick={() => setView('clients')} className="text-slate-400 font-black text-[10px] tracking-widest flex items-center space-x-2 hover:text-slate-900 uppercase">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                <span>Voltar aos Parceiros</span>
+             </button>
+             <button 
+                onClick={() => toggleVipStatus(activeClient.id, activeClient.isVip || false)}
+                className={`px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest border transition-all ${
+                  activeClient.isVip 
+                  ? 'bg-slate-100 text-slate-500 border-slate-200' 
+                  : 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-600 hover:text-white'
+                }`}
+             >
+               {activeClient.isVip ? 'REMOVER SELO VIP' : 'PROMOVER A VIP'}
+             </button>
+           </div>
            
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
               <div className="lg:col-span-2 space-y-10">
-                 <div className="bg-white p-12 rounded-[56px] border border-slate-200 shadow-sm">
+                 <div className="bg-white p-12 rounded-[56px] border border-slate-200 shadow-sm relative overflow-hidden">
+                    {activeClient.isVip && <div className="absolute top-0 right-0 p-8"><VipBadge /></div>}
                     <div className="flex justify-between items-start mb-10">
                        <div>
                           <h2 className="text-5xl font-black tracking-tighter text-slate-900">{activeClient.companyName}</h2>
                           <p className="text-slate-400 font-bold text-lg mt-2">{activeClient.contactName}</p>
                        </div>
                        {(() => {
-                         const rd = getRankData(projects.filter(p => p.clientId === activeClient.id).length);
+                         const rd = getRankData(projects.filter(p => p.clientId === activeClient.id).length, activeClient.isVip);
                          return <div className={`text-5xl p-6 ${rd.bg} rounded-3xl border border-slate-100`}>{rd.medal}</div>
                        })()}
                     </div>
@@ -488,10 +525,10 @@ const AdminDashboard: React.FC = () => {
 
               <div className="bg-slate-950 p-12 rounded-[56px] text-white shadow-2xl flex flex-col items-center text-center h-fit">
                  <div className="w-24 h-24 bg-slate-800 rounded-full flex items-center justify-center text-4xl mb-8">
-                    {getRankData(projects.filter(p => p.clientId === activeClient.id).length).medal}
+                    {getRankData(projects.filter(p => p.clientId === activeClient.id).length, activeClient.isVip).medal}
                  </div>
                  <h3 className="text-2xl font-black tracking-tight mb-2">Selo de Prestígio</h3>
-                 <p className="text-blue-400 font-black uppercase tracking-[0.2em] text-[10px] mb-8">{getRankData(projects.filter(p => p.clientId === activeClient.id).length).category}</p>
+                 <p className="text-blue-400 font-black uppercase tracking-[0.2em] text-[10px] mb-8">{getRankData(projects.filter(p => p.clientId === activeClient.id).length, activeClient.isVip).category}</p>
                  <div className="p-6 bg-slate-900 rounded-3xl border border-slate-800 italic text-slate-400 text-sm leading-relaxed">
                     "Este parceiro demonstra um compromisso excepcional com a evolução digital através do Hub."
                  </div>
@@ -771,6 +808,12 @@ const AdminDashboard: React.FC = () => {
                     <input name="email" placeholder="E-mail" className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-bold outline-none" required />
                     <input name="phone" placeholder="WhatsApp" className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-bold outline-none" />
                  </div>
+                 
+                 <div className="flex items-center space-x-4 p-6 bg-amber-50 rounded-[28px] border border-amber-100">
+                    <input type="checkbox" name="isVip" id="isVip" className="w-6 h-6 rounded-lg accent-amber-500" />
+                    <label htmlFor="isVip" className="text-sm font-black text-amber-700 uppercase tracking-widest cursor-pointer">Definir como Parceiro VIP</label>
+                 </div>
+
                  <div className="flex space-x-6 pt-10">
                     <button type="button" onClick={() => setShowModal(null)} className="flex-1 py-5 font-black text-slate-400 uppercase tracking-widest">CANCELAR</button>
                     <button type="submit" className="flex-1 py-5 bg-blue-600 text-white rounded-[28px] font-black shadow-2xl uppercase tracking-widest">CADASTRAR</button>

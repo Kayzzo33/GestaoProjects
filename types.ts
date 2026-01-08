@@ -40,7 +40,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  phone?: string; // Novo campo
+  phone?: string;
   role: UserRole;
   isActive: boolean;
   clientId?: string;
@@ -55,6 +55,7 @@ export interface Client {
   email: string;
   phone: string;
   notes: string;
+  isVip?: boolean; // Novo campo VIP
   projectsCount?: number;
   createdAt: string;
   updatedAt: string;
