@@ -14,7 +14,7 @@ import {
   limit
 } from "firebase/firestore";
 import { db_firestore } from "./firebase";
-import { User, Client, Project, ProjectLog, UserRole, ProjectStatus, AuditLog, LogType, ChangeRequest, RequestStatus } from './types';
+import { User, Client, Project, ProjectLog, UserRole, ProjectStatus, AuditLog, LogType, ChangeRequest, RequestStatus, Lead, LeadStatus } from './types';
 
 class Database {
   // --- AUDITORIA ---
@@ -41,6 +41,32 @@ class Database {
     } catch (e) {
       return [];
     }
+  }
+
+  // --- LEADS (CRM) ---
+  async getLeads(): Promise<Lead[]> {
+    try {
+      const snap = await getDocs(collection(db_firestore, "leads"));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() } as Lead));
+    } catch (e) { return []; }
+  }
+
+  async addLead(data: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>, adminName: string) {
+    const docRef = await addDoc(collection(db_firestore, "leads"), {
+      ...data,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    await this.addAudit('CREATE_LEAD', 'LEAD', docRef.id, adminName, `Novo Lead: ${data.name} (${data.company})`);
+    return docRef.id;
+  }
+
+  async updateLead(id: string, data: Partial<Lead>, adminName: string) {
+    await updateDoc(doc(db_firestore, "leads", id), {
+      ...data,
+      updatedAt: new Date().toISOString()
+    });
+    await this.addAudit('UPDATE_LEAD', 'LEAD', id, adminName, `Lead atualizado para ${data.status || 'mesmo status'}`);
   }
 
   // --- USUÁRIOS ---
@@ -135,8 +161,6 @@ class Database {
 
   async getChangeRequests(clientId?: string): Promise<ChangeRequest[]> {
     try {
-      // Nota: Removido orderBy da query para evitar necessidade de índices manuais iniciais.
-      // A ordenação é feita em memória para garantir visibilidade total.
       const q = clientId 
         ? query(collection(db_firestore, "changeRequests"), where("clientId", "==", clientId))
         : collection(db_firestore, "changeRequests");
@@ -146,7 +170,6 @@ class Database {
         .map(doc => ({ id: doc.id, ...doc.data() } as ChangeRequest))
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } catch (e) { 
-      console.error("Erro ao carregar solicitações:", e);
       return []; 
     }
   }
@@ -180,13 +203,14 @@ class Database {
   }
 
   async getAdminContext() {
-    const [projects, logs, clients, requests] = await Promise.all([
+    const [projects, logs, clients, requests, leads] = await Promise.all([
       this.getProjects(),
       this.getLogs(),
       this.getClients(),
-      this.getChangeRequests()
+      this.getChangeRequests(),
+      this.getLeads()
     ]);
-    return { projects, logs, clients, requests };
+    return { projects, logs, clients, requests, leads };
   }
 
   async getClientContext(clientId: string) {

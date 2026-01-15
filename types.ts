@@ -14,11 +14,20 @@ export enum ProjectStatus {
   FINISHED = 'FINISHED'
 }
 
+export enum LeadStatus {
+  PROSPECT = 'PROSPECT',
+  NEGOTIATING = 'NEGOTIATING',
+  PROPOSAL_SENT = 'PROPOSAL_SENT',
+  WON = 'WON',
+  LOST = 'LOST'
+}
+
 export enum LogType {
   UPDATE = 'UPDATE',
   ISSUE = 'ISSUE',
   MILESTONE = 'MILESTONE',
-  NOTE = 'NOTE'
+  NOTE = 'NOTE',
+  STRATEGIC_GAIN = 'STRATEGIC_GAIN' // Novo tipo para visibilidade de valor
 }
 
 export enum RequestStatus {
@@ -48,6 +57,20 @@ export interface User {
   updatedAt: string;
 }
 
+export interface Lead {
+  id: string;
+  name: string;
+  company: string;
+  email: string;
+  phone: string;
+  status: LeadStatus;
+  estimatedValue: number;
+  notes: string;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Client {
   id: string;
   companyName: string;
@@ -55,7 +78,7 @@ export interface Client {
   email: string;
   phone: string;
   notes: string;
-  isVip?: boolean; // Novo campo VIP
+  isVip?: boolean;
   projectsCount?: number;
   createdAt: string;
   updatedAt: string;
@@ -110,7 +133,7 @@ export interface ProjectLog {
 export interface AuditLog {
   id: string;
   action: string;
-  entityType: 'PROJECT' | 'CLIENT' | 'USER' | 'REQUEST';
+  entityType: 'PROJECT' | 'CLIENT' | 'USER' | 'REQUEST' | 'LEAD';
   entityId: string;
   userName: string;
   details: string;
@@ -121,12 +144,4 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
-}
-
-export interface ClientRankInfo {
-  position: number;
-  medal: string;
-  category: string;
-  color: string;
-  message: string;
 }

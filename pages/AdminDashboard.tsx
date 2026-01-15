@@ -7,20 +7,18 @@ import { db } from '../db';
 import ChatPanel from '../components/ChatPanel';
 import { useAuth } from '../App';
 import { geminiService } from '../geminiService';
-import { ProjectStatus, Project, Client, ProjectLog, User, UserRole, AuditLog, LogType, ChangeRequest, RequestStatus } from '../types';
+import { ProjectStatus, Project, Client, ProjectLog, User, UserRole, AuditLog, LogType, ChangeRequest, RequestStatus, Lead, LeadStatus } from '../types';
 
 const LighthouseGauge = ({ value, label }: { value: number | undefined; label: string }) => {
   const safeValue = value ?? 0;
   const radius = 25;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (safeValue / 100) * circumference;
-  
   const getColor = (v: number) => {
     if (v >= 90) return 'stroke-emerald-500';
     if (v >= 50) return 'stroke-amber-500';
     return 'stroke-rose-500';
   };
-
   return (
     <div className="flex flex-col items-center">
       <div className="relative w-16 h-16 flex items-center justify-center">
@@ -28,59 +26,44 @@ const LighthouseGauge = ({ value, label }: { value: number | undefined; label: s
           <circle cx="50" cy="50" r={radius} fill="transparent" stroke="#f1f5f9" strokeWidth="8" />
           <circle cx="50" cy="50" r={radius} fill="transparent" stroke="currentColor" strokeWidth="8" strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" className={`${getColor(safeValue)} transition-all duration-1000`} />
         </svg>
-        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black">{safeValue}</span>
+        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-slate-900">{safeValue}</span>
       </div>
       <span className="mt-2 text-[8px] font-black text-slate-400 uppercase tracking-widest text-center">{label}</span>
     </div>
   );
 };
 
-const VipBadge = () => (
-  <div className="inline-flex items-center px-3 py-1 bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 rounded-full shadow-lg shadow-amber-500/20 border border-amber-300 animate-pulse">
-    <span className="text-[8px] font-black text-white uppercase tracking-[0.2em]">VIP PARTNER</span>
-    <svg className="ml-1.5 w-2 h-2 text-white fill-current" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-  </div>
-);
-
 const AdminDashboard: React.FC = () => {
-  const { user } = useAuth();
-  const [view, setView] = useState<'overview' | 'projects' | 'project-detail' | 'clients' | 'client-detail' | 'users' | 'audit' | 'requests'>('overview');
-  const [showModal, setShowModal] = useState<'project' | 'edit-project' | 'client' | 'log' | 'user' | null>(null);
+  const { user: currentUser } = useAuth();
+  const [view, setView] = useState<'overview' | 'projects' | 'project-detail' | 'clients' | 'client-detail' | 'users' | 'audit' | 'requests' | 'crm' | 'briefing'>('overview');
+  const [showModal, setShowModal] = useState<'project' | 'edit-project' | 'client' | 'log' | 'user' | 'lead' | 'auth-profile' | null>(null);
   
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [aiLoading, setAiLoading] = useState<string | null>(null);
+  const [briefingLoading, setBriefingLoading] = useState(false);
+  const [briefingResult, setBriefingResult] = useState<any>(null);
+  const [suggestingResponse, setSuggestingResponse] = useState<string | null>(null);
   
   const [projects, setProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [logs, setLogs] = useState<ProjectLog[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [requests, setRequests] = useState<ChangeRequest[]>([]);
-  
-  const [requestResponses, setRequestResponses] = useState<Record<string, string>>({});
-
-  const activeProject = useMemo(() => 
-    projects.find(p => p.id === selectedProjectId) || null
-  , [projects, selectedProjectId]);
-
-  const projectLogs = useMemo(() => 
-    logs.filter(l => l.projectId === selectedProjectId)
-  , [logs, selectedProjectId]);
-
-  const activeClient = clients.find(c => c.id === selectedClientId);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [p, c, l, u, a, r] = await Promise.all([
+      const [p, c, l, u, a, r, ld] = await Promise.all([
         db.getProjects(), 
         db.getClients(), 
         db.getLogs(),
         db.getUsers(),
         db.getAuditLogs(),
-        db.getChangeRequests()
+        db.getChangeRequests(),
+        db.getLeads()
       ]);
       setProjects(p);
       setClients(c);
@@ -88,12 +71,7 @@ const AdminDashboard: React.FC = () => {
       setUsers(u);
       setAuditLogs(a);
       setRequests(r);
-
-      const responses: Record<string, string> = {};
-      r.forEach(req => {
-        if (req.adminComment) responses[req.id] = req.adminComment;
-      });
-      setRequestResponses(responses);
+      setLeads(ld);
     } catch (error) {
       console.error("Erro ao sincronizar banco:", error);
     } finally {
@@ -101,116 +79,34 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
-  const clientRanking = useMemo(() => {
-    return clients
-      .map(c => ({
-        ...c,
-        projectsCount: projects.filter(p => p.clientId === c.id).length
-      }))
-      .sort((a, b) => {
-        // Lógica de Ranking: 
-        // 1. VIPs primeiro
-        // 2. Depois por número de projetos
-        if (a.isVip !== b.isVip) return a.isVip ? -1 : 1;
-        return (b.projectsCount || 0) - (a.projectsCount || 0);
-      });
-  }, [clients, projects]);
+  const activeProject = useMemo(() => projects.find(p => p.id === selectedProjectId), [projects, selectedProjectId]);
+  const activeClient = useMemo(() => clients.find(c => c.id === selectedClientId), [clients, selectedClientId]);
+  const projectLogs = useMemo(() => logs.filter(l => l.projectId === selectedProjectId), [logs, selectedProjectId]);
 
-  const getRankData = (count: number, isVip?: boolean) => {
-    if (isVip) return { medal: '💎', category: 'DIAMANTE VIP', color: 'text-amber-500', bg: 'bg-amber-50' };
-    if (count >= 11) return { medal: '🏆', category: 'ELITE', color: 'text-cyan-500', bg: 'bg-cyan-50' };
-    if (count >= 6) return { medal: '🥇', category: 'OURO', color: 'text-amber-500', bg: 'bg-amber-50' };
-    if (count >= 3) return { medal: '🥈', category: 'PRATA', color: 'text-slate-400', bg: 'bg-slate-50' };
-    if (count >= 1) return { medal: '🥉', category: 'BRONZE', color: 'text-orange-600', bg: 'bg-orange-50' };
-    return { medal: '🌱', category: 'INICIANTE', color: 'text-slate-300', bg: 'bg-white' };
+  const getClientPrestige = (client: Client) => {
+    if (client.isVip) return { label: 'DIAMANTE VIP (1)', icon: '💎', color: 'text-blue-400', badge: 'bg-blue-50 border-blue-100 text-blue-600', rank: 'DIAMANTE' };
+    const count = projects.filter(p => p.clientId === client.id).length;
+    if (count >= 10) return { label: `OURO (${count})`, icon: '🥇', color: 'text-amber-500', badge: 'bg-amber-50 border-amber-100 text-amber-600', rank: 'OURO' };
+    if (count >= 3) return { label: `PRATA (${count})`, icon: '🥈', color: 'text-slate-400', badge: 'bg-slate-50 border-slate-200 text-slate-500', rank: 'PRATA' };
+    return { label: `BRONZE (${count})`, icon: '🥉', color: 'text-orange-400', badge: 'bg-orange-50 border-orange-100 text-orange-600', rank: 'BRONZE' };
   };
 
-  const toggleVipStatus = async (clientId: string, currentStatus: boolean) => {
-    await db.updateClient(clientId, { isVip: !currentStatus }, user?.name || 'Admin');
-    loadData();
-  };
-
-  const handleAddProject = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleBriefing = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    const clientId = f.get('clientId') === '' ? null : f.get('clientId') as string;
-    
-    await db.addProject({
-      name: f.get('name') as string,
-      description: f.get('description') as string,
-      clientId: clientId,
-      projectType: f.get('projectType') as string || 'WEB',
-      stack: f.get('stack') as string,
-      productionUrl: f.get('productionUrl') as string,
-      stagingUrl: f.get('stagingUrl') as string,
-      repositoryUrl: f.get('repositoryUrl') as string,
-      figmaUrl: f.get('figmaUrl') as string,
-      docsUrl: f.get('docsUrl') as string,
-      status: f.get('status') as ProjectStatus,
-      visibilityForClient: f.get('visibility') === 'true',
-      lighthouseMetrics: {
-        performance: Number(f.get('perf')) || 0,
-        accessibility: Number(f.get('acc')) || 0,
-        bestPractices: Number(f.get('bp')) || 0,
-        seo: Number(f.get('seo')) || 0
-      },
-      startDate: f.get('startDate') as string || new Date().toISOString(),
-      expectedEndDate: f.get('endDate') as string,
-    }, user?.name || 'Admin');
-    setShowModal(null);
-    loadData();
-  };
-
-  const handleEditProject = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!activeProject) return;
-    const f = new FormData(e.currentTarget);
-    const clientId = f.get('clientId') === '' ? null : f.get('clientId') as string;
-    
-    await db.updateProject(activeProject.id, {
-      name: f.get('name') as string,
-      description: f.get('description') as string,
-      clientId: clientId,
-      stack: f.get('stack') as string,
-      productionUrl: f.get('productionUrl') as string,
-      figmaUrl: f.get('figmaUrl') as string,
-      status: f.get('status') as ProjectStatus,
-      lighthouseMetrics: {
-        performance: Number(f.get('perf')) || 0,
-        accessibility: Number(f.get('acc')) || 0,
-        bestPractices: Number(f.get('bp')) || 0,
-        seo: Number(f.get('seo')) || 0
-      }
-    }, user?.name || 'Admin');
-    setShowModal(null);
-    loadData();
-  };
-
-  const handleAddClient = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    await db.addClient({
-      companyName: f.get('companyName') as string,
-      contactName: f.get('contactName') as string,
-      email: f.get('email') as string,
-      phone: f.get('phone') as string,
-      notes: f.get('notes') as string,
-      isVip: f.get('isVip') === 'on'
-    }, user?.name || 'Admin');
-    setShowModal(null);
-    loadData();
-  };
-
-  const suggestAIResponse = async (request: ChangeRequest) => {
-    setAiLoading(request.id);
-    const projectName = projects.find(p => p.id === request.projectId)?.name || 'Projeto Desconhecido';
-    const suggestion = await geminiService.suggestTicketResponse(request, projectName);
-    setRequestResponses(prev => ({ ...prev, [request.id]: suggestion }));
-    setAiLoading(null);
+    const text = f.get('rawText') as string;
+    if (!text) return;
+    setBriefingLoading(true);
+    try {
+      const result = await geminiService.processSmartBriefing(text);
+      setBriefingResult(result);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setBriefingLoading(false);
+    }
   };
 
   const SidebarContent = (
@@ -220,215 +116,184 @@ const AdminDashboard: React.FC = () => {
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
         <span>Painel IA</span>
       </button>
-      <button onClick={() => setView('projects')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'projects' || view === 'project-detail' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+      <button onClick={() => setView('projects')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'projects' || view === 'project-detail' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
         <span>Projetos</span>
       </button>
-      <button onClick={() => setView('requests')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'requests' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>
+      <button onClick={() => setView('requests')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'requests' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span>Solicitações</span>
       </button>
-      <button onClick={() => setView('clients')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'clients' || view === 'client-detail' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <button onClick={() => setView('clients')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'clients' || view === 'client-detail' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
         <span>Parceiros</span>
       </button>
-      <div className="pt-4 mt-4 border-t border-slate-800">
-        <button onClick={() => setView('users')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'users' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>
+
+      <div className="pt-4 mt-4 border-t border-slate-900">
+        <button onClick={() => setView('users')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'users' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
           <span>Acessos</span>
         </button>
-        <button onClick={() => setView('audit')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'audit' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        <button onClick={() => setView('audit')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'audit' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
           <span>Auditoria</span>
+        </button>
+      </div>
+
+      <div className="pt-4 mt-4 border-t border-slate-900">
+        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-3 mb-2">Engenharia IA</div>
+        <button onClick={() => setView('crm')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'crm' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M2 12h20"/></svg>
+           <span>Funil de Leads</span>
+        </button>
+        <button onClick={() => setView('briefing')} className={`w-full flex items-center space-x-3 px-3 py-3 rounded-xl font-semibold transition-all ${view === 'briefing' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+          <span>Briefing Mágico</span>
         </button>
       </div>
     </nav>
   );
 
-  if (loading) return <div className="h-screen flex items-center justify-center bg-white font-black text-blue-500 uppercase tracking-widest text-xs animate-pulse">Sincronizando Ecossistema...</div>;
+  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-950 font-black text-blue-500 animate-pulse uppercase tracking-[0.5em] text-[10px]">Sincronizando Matriz...</div>;
 
   return (
-    <Layout title="Control Hub Admin" roleTag="Acesso Root" sidebar={SidebarContent}>
+    <Layout title="Control Hub Admin" roleTag="ACESSO ROOT" sidebar={SidebarContent}>
       
       {view === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 animate-in fade-in">
-          <div className="lg:col-span-3 space-y-8">
-             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
-                <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Projetos</p>
-                  <p className="text-4xl font-black text-slate-900">{projects.length}</p>
-                </div>
-                <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tickets</p>
-                  <p className="text-4xl font-black text-blue-600">{requests.filter(r => r.status === RequestStatus.OPEN).length}</p>
-                </div>
-                <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm relative group overflow-hidden">
-                   <div className="absolute -right-4 -top-4 text-6xl opacity-[0.05] grayscale group-hover:grayscale-0 transition-all duration-700">🏆</div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Ranking Líder</p>
-                  <p className="text-xl font-black text-slate-900 truncate">{clientRanking[0]?.companyName || '---'}</p>
-                </div>
-                <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Parceiros</p>
-                   <p className="text-4xl font-black text-slate-900">{clients.length}</p>
-                </div>
-             </div>
-             
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-               <div className="bg-white rounded-[40px] border border-slate-200 p-10 shadow-sm">
-                 <h3 className="text-lg font-black mb-8 text-slate-900 flex items-center uppercase tracking-tighter">
-                   <span className="mr-3">⭐</span> Ranking de Fidelidade
-                 </h3>
-                 <div className="space-y-4">
-                    {clientRanking.slice(0, 5).map((c, idx) => {
-                      const rd = getRankData(c.projectsCount || 0, c.isVip);
-                      return (
-                        <div key={c.id} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${c.isVip ? 'bg-amber-50/50 border-amber-200 shadow-inner' : 'bg-slate-50 border-slate-100'}`}>
-                          <div className="flex items-center space-x-4">
-                             <span className={`text-lg font-black w-6 ${c.isVip ? 'text-amber-400' : 'text-slate-300'}`}>#{idx + 1}</span>
-                             <div>
-                               <div className="flex items-center space-x-2">
-                                 <p className="font-black text-slate-900 text-sm">{c.companyName}</p>
-                                 {c.isVip && <div className="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>}
-                               </div>
-                               <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-widest ${rd.bg} ${rd.color}`}>{rd.category}</span>
-                             </div>
-                          </div>
-                          <span className="text-lg">{rd.medal}</span>
-                        </div>
-                      );
-                    })}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+           <div className="lg:col-span-3 space-y-8 animate-in fade-in">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                 <div className="bg-white p-8 rounded-[40px] border shadow-sm">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Pipeline CRM</p>
+                    <p className="text-4xl font-black text-emerald-600">R$ {leads.reduce((acc, l) => acc + (l.estimatedValue || 0), 0).toLocaleString()}</p>
                  </div>
-               </div>
-
-               <div className="bg-white rounded-[40px] border border-slate-200 p-10 shadow-sm">
-                 <h3 className="text-lg font-black mb-8 text-slate-900 flex items-center uppercase tracking-tighter">
-                   <span className="mr-3">📡</span> Log Operacional
-                 </h3>
-                 <div className="space-y-4">
-                   {logs.slice(0, 4).map(l => (
-                    <div key={l.id} className="p-4 bg-slate-50 rounded-2xl flex items-center justify-between border border-transparent">
-                      <div className="flex items-center space-x-3">
-                         <div className={`w-2 h-2 rounded-full ${l.logType === LogType.ISSUE ? 'bg-rose-500' : 'bg-blue-500'}`}></div>
-                         <div>
-                           <p className="font-black text-slate-900 text-xs">{l.title}</p>
-                           <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">{new Date(l.createdAt).toLocaleDateString()}</p>
-                         </div>
-                      </div>
-                    </div>
-                  ))}
+                 <div className="bg-white p-8 rounded-[40px] border shadow-sm">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Projetos Ativos</p>
+                    <p className="text-4xl font-black text-slate-900">{projects.length}</p>
                  </div>
-               </div>
-             </div>
-          </div>
-          <ChatPanel type="admin" title="Engenheiro IA" description="Status Operacional" />
+                 <div className="bg-white p-8 rounded-[40px] border shadow-sm">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Novos Leads</p>
+                    <p className="text-4xl font-black text-blue-600">{leads.filter(l => l.status === LeadStatus.PROSPECT).length}</p>
+                 </div>
+                 <div className="bg-white p-8 rounded-[40px] border shadow-sm">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tickets Abertos</p>
+                    <p className="text-4xl font-black text-rose-600">{requests.filter(r => r.status === RequestStatus.OPEN).length}</p>
+                 </div>
+              </div>
+              <ChatPanel type="admin" title="Engenheiro IA" description="Análise Estratégica" />
+           </div>
+           <div className="bg-slate-950 rounded-[48px] p-10 text-white shadow-2xl h-fit max-h-[750px] overflow-y-auto">
+              <h3 className="text-xs font-black uppercase tracking-[0.2em] mb-8 text-blue-400">Atividade Recente</h3>
+              <div className="space-y-6">
+                 {logs.slice(0, 15).map(l => (
+                   <div key={l.id} className="border-l-2 border-slate-800 pl-4 py-1">
+                      <p className="text-[10px] font-black uppercase text-slate-500 mb-1">{new Date(l.createdAt).toLocaleDateString()}</p>
+                      <p className="text-xs font-bold leading-tight text-slate-200">{l.title}</p>
+                   </div>
+                 ))}
+                 {logs.length === 0 && <p className="text-slate-600 italic text-xs">Nenhum log disponível.</p>}
+              </div>
+           </div>
         </div>
       )}
 
       {view === 'projects' && (
         <div className="space-y-10 animate-in slide-in-from-bottom-8">
-          <div className="flex justify-between items-end">
+           <div className="flex justify-between items-end">
              <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Ecossistemas</h2>
-             <button onClick={() => { setSelectedProjectId(null); setShowModal('project'); }} className="bg-blue-600 text-white px-10 py-5 rounded-[24px] font-black shadow-2xl hover:scale-105 transition-all">+ Novo Projeto</button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {projects.map(p => (
-              <div key={p.id} className="bg-white rounded-[40px] border border-slate-200 p-12 flex flex-col group shadow-sm hover:shadow-2xl transition-all">
-                 <div className="flex justify-between items-start mb-10">
-                    <span className={`px-4 py-1.5 text-[10px] font-black rounded-xl uppercase tracking-widest border ${
-                      p.status === ProjectStatus.PRODUCTION ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'
-                    }`}>{p.status}</span>
-                 </div>
-                 <h3 className="text-2xl font-black text-slate-900 mb-4 group-hover:text-blue-600 transition-colors">{p.name}</h3>
-                 <p className="text-slate-500 mb-12 line-clamp-3 font-medium leading-relaxed">{p.description}</p>
-                 <button onClick={() => { setSelectedProjectId(p.id); setView('project-detail'); }} className="mt-auto bg-slate-50 py-4 rounded-2xl text-xs font-black text-blue-600 tracking-widest hover:bg-blue-600 hover:text-white transition-all">VER DETALHES</button>
-              </div>
-            ))}
-          </div>
+             <button onClick={() => setShowModal('project')} className="bg-blue-600 text-white px-10 py-5 rounded-[24px] font-black shadow-2xl hover:scale-105 transition-all">+ Novo Projeto</button>
+           </div>
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {projects.map(p => (
+                <div key={p.id} className="bg-white p-10 rounded-[48px] border shadow-sm flex flex-col group hover:shadow-xl transition-all">
+                   <div className="flex justify-between mb-8">
+                      <span className="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-xl text-[9px] font-black border border-blue-100 uppercase tracking-widest">{p.status}</span>
+                   </div>
+                   <h3 className="text-3xl font-black mb-4 group-hover:text-blue-600 transition-colors tracking-tight">{p.name}</h3>
+                   <p className="text-slate-500 mb-8 line-clamp-3 font-medium leading-relaxed">{p.description}</p>
+                   <button onClick={() => { setSelectedProjectId(p.id); setView('project-detail'); }} className="mt-auto py-5 bg-slate-50 rounded-2xl text-[10px] font-black text-blue-600 uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">Ver Engenharia</button>
+                </div>
+              ))}
+           </div>
         </div>
       )}
 
       {view === 'project-detail' && activeProject && (
-        <div className="space-y-10 animate-in fade-in">
-          <div className="flex justify-between items-start">
-            <button onClick={() => setView('projects')} className="text-slate-400 font-black text-[10px] tracking-widest flex items-center space-x-2 hover:text-slate-900 uppercase">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-              <span>Voltar aos Projetos</span>
-            </button>
-            <div className="flex space-x-4">
-               <button onClick={() => setShowModal('edit-project')} className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-blue-500/20">Configurar Projeto</button>
-            </div>
-          </div>
+        <div className="animate-in fade-in space-y-10">
+           <div className="flex justify-between items-start">
+              <button onClick={() => setView('projects')} className="text-slate-400 font-black text-[10px] tracking-widest flex items-center space-x-2 hover:text-slate-900 transition-colors uppercase">
+                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                 <span>Voltar aos Projetos</span>
+              </button>
+              <button className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:scale-105 transition-all">Configurar Projeto</button>
+           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-             <div className="lg:col-span-2 space-y-10">
-                <div className="bg-white p-12 rounded-[56px] border border-slate-200 shadow-sm">
-                   <div className="flex justify-between items-start mb-10">
-                      <h2 className="text-5xl font-black tracking-tighter text-slate-900">{activeProject.name}</h2>
-                      <span className="px-6 py-2 bg-blue-50 text-blue-600 text-[10px] font-black rounded-full border border-blue-100 uppercase tracking-widest">{activeProject.status}</span>
-                   </div>
-                   
-                   <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-10 border-t border-b border-slate-50 mb-10">
-                      <LighthouseGauge value={activeProject.lighthouseMetrics?.performance} label="Performance" />
-                      <LighthouseGauge value={activeProject.lighthouseMetrics?.accessibility} label="Acessibilidade" />
-                      <LighthouseGauge value={activeProject.lighthouseMetrics?.bestPractices} label="Boas Práticas" />
-                      <LighthouseGauge value={activeProject.lighthouseMetrics?.seo} label="SEO" />
-                   </div>
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+              <div className="lg:col-span-2 space-y-10">
+                 <div className="bg-white p-16 rounded-[64px] border shadow-sm relative overflow-hidden">
+                    <div className="flex justify-between items-start mb-16">
+                       <h2 className="text-6xl font-black tracking-tighter text-slate-900">{activeProject.name}</h2>
+                       <span className="px-6 py-2 bg-blue-50 text-blue-600 text-[10px] font-black rounded-full border border-blue-100 uppercase tracking-widest">{activeProject.status}</span>
+                    </div>
 
-                   <div className="mb-10 p-8 bg-slate-50 rounded-[32px] border border-slate-100">
-                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Stack Tecnológica</h4>
-                      <div className="flex flex-wrap gap-2">
-                         {activeProject.stack.split(',').map((s, i) => (
-                           <span key={i} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700">{s.trim()}</span>
-                         ))}
-                      </div>
-                   </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-8 py-12 border-t border-b border-slate-50 mb-12">
+                       <LighthouseGauge value={activeProject.lighthouseMetrics?.performance} label="Performance" />
+                       <LighthouseGauge value={activeProject.lighthouseMetrics?.accessibility} label="Acessibilidade" />
+                       <LighthouseGauge value={activeProject.lighthouseMetrics?.bestPractices} label="Boas Práticas" />
+                       <LighthouseGauge value={activeProject.lighthouseMetrics?.seo} label="SEO" />
+                    </div>
 
-                   <div className="prose prose-slate max-w-none text-slate-600 font-medium leading-relaxed mb-10">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeProject.description}</ReactMarkdown>
-                   </div>
+                    <div className="mb-12">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Stack Tecnológica</p>
+                       <div className="flex flex-wrap gap-3">
+                          {activeProject.stack.split(',').map((s, i) => (
+                            <span key={i} className="px-5 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-black text-slate-700 shadow-sm">{s.trim()}</span>
+                          ))}
+                       </div>
+                    </div>
 
-                   <div className="pt-10 border-t border-slate-50">
-                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Linha do Tempo / Logs</h4>
-                      <div className="space-y-4">
-                         {projectLogs.length === 0 ? (
-                           <p className="text-slate-300 italic text-sm">Nenhum log registrado para este projeto.</p>
-                         ) : (
-                           projectLogs.map(l => (
-                             <div key={l.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
-                                <div>
-                                   <p className="text-sm font-black text-slate-900">{l.title}</p>
-                                   <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">{new Date(l.createdAt).toLocaleString()}</p>
-                                </div>
-                                <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${l.logType === LogType.ISSUE ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'}`}>{l.logType}</span>
-                             </div>
-                           ))
-                         )}
-                      </div>
-                   </div>
-                </div>
-             </div>
+                    <div className="prose prose-slate prose-lg max-w-none text-slate-600 font-medium leading-relaxed mb-16">
+                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeProject.description}</ReactMarkdown>
+                    </div>
 
-             <div className="space-y-10">
-                <div className="bg-slate-950 p-10 rounded-[48px] text-white shadow-2xl">
-                   <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400 mb-10">Ecossistema Live</h3>
-                   <div className="space-y-4">
-                      {activeProject.productionUrl && (
-                        <a href={activeProject.productionUrl} target="_blank" className="flex items-center justify-between p-5 bg-slate-900 rounded-3xl hover:bg-blue-600 transition-all border border-slate-800 group">
-                           <span className="text-[10px] font-black uppercase tracking-widest">Produção</span>
-                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
-                        </a>
-                      )}
-                      {activeProject.figmaUrl && (
-                        <a href={activeProject.figmaUrl} target="_blank" className="flex items-center justify-between p-5 bg-slate-900 rounded-3xl hover:bg-purple-600 transition-all border border-slate-800">
-                           <span className="text-[10px] font-black uppercase tracking-widest">Figma Design</span>
-                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
-                        </a>
-                      )}
-                   </div>
-                </div>
-                <ChatPanel type="admin" title="Engenheiro IA" description={`Analisando ${activeProject.name}`} />
-             </div>
-          </div>
+                    <div className="pt-12 border-t border-slate-50">
+                       <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-8">Linha do Tempo / Logs</h4>
+                       <div className="space-y-6">
+                          {projectLogs.map(l => (
+                            <div key={l.id} className="flex space-x-6 group">
+                               <div className="pt-1.5 flex flex-col items-center">
+                                  <div className="w-2.5 h-2.5 rounded-full bg-blue-500 border-2 border-white ring-2 ring-blue-100"></div>
+                                  <div className="w-0.5 h-full bg-slate-100 group-last:hidden"></div>
+                               </div>
+                               <div className="pb-8">
+                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{new Date(l.createdAt).toLocaleDateString()}</p>
+                                  <p className="font-bold text-slate-900">{l.title}</p>
+                                  <p className="text-sm text-slate-500 mt-2 font-medium">{l.description}</p>
+                               </div>
+                            </div>
+                          ))}
+                          {projectLogs.length === 0 && <p className="text-slate-400 italic text-sm">Nenhum log registrado para este projeto.</p>}
+                       </div>
+                    </div>
+                 </div>
+              </div>
+
+              <div className="space-y-10">
+                 <div className="bg-slate-950 p-10 rounded-[48px] text-white shadow-2xl border border-slate-900">
+                    <p className="text-blue-500 font-black uppercase text-[10px] tracking-[0.2em] mb-8">Ecossistema Live</p>
+                    <div className="bg-slate-900 p-8 rounded-[32px] border border-slate-800 flex justify-between items-center group cursor-pointer hover:border-blue-500/50 transition-all">
+                       <div>
+                          <p className="text-[10px] font-black text-slate-500 uppercase mb-1">Status Ativo</p>
+                          <p className="text-lg font-black tracking-tight uppercase">Produção</p>
+                       </div>
+                       <div className="p-3 rounded-xl bg-slate-800 group-hover:bg-blue-600 transition-all">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+                       </div>
+                    </div>
+                 </div>
+                 <ChatPanel type="admin" title="Engenheiro IA" description={`Analisando ${activeProject.name}`} />
+              </div>
+           </div>
         </div>
       )}
 
@@ -438,27 +303,28 @@ const AdminDashboard: React.FC = () => {
              <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Parceiros de Negócio</h2>
              <button onClick={() => setShowModal('client')} className="bg-blue-600 text-white px-10 py-5 rounded-[24px] font-black shadow-2xl hover:scale-105 transition-all">+ Novo Parceiro</button>
            </div>
-           
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
              {clients.map(c => {
-               const projCount = projects.filter(p => p.clientId === c.id).length;
-               const rd = getRankData(projCount, c.isVip);
+               const prestige = getClientPrestige(c);
                return (
-                 <div key={c.id} className={`p-10 rounded-[40px] border shadow-sm group hover:shadow-xl transition-all relative overflow-hidden ${c.isVip ? 'bg-white border-amber-200 ring-2 ring-amber-100' : 'bg-white border-slate-200'}`}>
-                    <div className={`absolute top-0 right-0 p-8 text-3xl opacity-20`}>{rd.medal}</div>
-                    <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 mb-8 group-hover:bg-blue-50 group-hover:text-blue-600 transition-all">
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-                    </div>
-                    <div className="flex flex-col space-y-1 mb-2">
-                       <h3 className="text-2xl font-black text-slate-900 leading-tight">{c.companyName}</h3>
-                       {c.isVip && <VipBadge />}
-                    </div>
-                    <p className="text-sm font-bold text-slate-400 mb-8 tracking-tight">{c.contactName} • {c.email}</p>
-                    <div className="pt-8 border-t border-slate-50 flex justify-between items-center">
-                       <span className={`text-[9px] font-black px-3 py-1 rounded-lg uppercase tracking-widest border ${rd.bg} ${rd.color}`}>{rd.category} ({projCount})</span>
-                       <button onClick={() => { setSelectedClientId(c.id); setView('client-detail'); }} className="text-blue-600 font-black text-[10px] tracking-widest uppercase hover:underline">Ver Perfil</button>
-                    </div>
-                 </div>
+                <div key={c.id} className="bg-white p-12 rounded-[56px] border border-slate-200 shadow-sm relative group hover:shadow-2xl transition-all">
+                   <div className="absolute top-10 right-10">
+                      <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 shadow-sm">
+                         <span className="text-lg">{prestige.icon}</span>
+                      </div>
+                   </div>
+                   <div className="w-16 h-16 rounded-[24px] bg-slate-50 border flex items-center justify-center mb-8 group-hover:bg-blue-50 transition-colors">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                   </div>
+                   <h3 className="text-3xl font-black text-slate-900 leading-tight mb-2 tracking-tight">{c.companyName}</h3>
+                   <p className="text-slate-400 font-bold mb-10 tracking-tight text-sm">{c.contactName} • {c.email}</p>
+                   <div className="pt-10 border-t border-slate-50 flex justify-between items-center">
+                      <span className={`px-4 py-1.5 rounded-lg text-[9px] font-black border uppercase tracking-widest ${prestige.badge}`}>
+                        {prestige.label}
+                      </span>
+                      <button onClick={() => { setSelectedClientId(c.id); setView('client-detail'); }} className="text-blue-600 font-black text-[10px] tracking-widest uppercase hover:underline">Ver Perfil</button>
+                   </div>
+                </div>
                );
              })}
            </div>
@@ -466,357 +332,338 @@ const AdminDashboard: React.FC = () => {
       )}
 
       {view === 'client-detail' && activeClient && (
-        <div className="space-y-10 animate-in fade-in">
-           <div className="flex justify-between items-center">
-             <button onClick={() => setView('clients')} className="text-slate-400 font-black text-[10px] tracking-widest flex items-center space-x-2 hover:text-slate-900 uppercase">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                <span>Voltar aos Parceiros</span>
-             </button>
-             <button 
-                onClick={() => toggleVipStatus(activeClient.id, activeClient.isVip || false)}
-                className={`px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest border transition-all ${
-                  activeClient.isVip 
-                  ? 'bg-slate-100 text-slate-500 border-slate-200' 
-                  : 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-600 hover:text-white'
-                }`}
-             >
-               {activeClient.isVip ? 'REMOVER SELO VIP' : 'PROMOVER A VIP'}
-             </button>
+        <div className="animate-in fade-in space-y-12">
+           <div className="flex justify-between items-start">
+              <button onClick={() => setView('clients')} className="text-slate-400 font-black text-[10px] tracking-widest flex items-center space-x-2 hover:text-slate-900 transition-colors uppercase">
+                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                 <span>Voltar aos Parceiros</span>
+              </button>
+              <button onClick={async () => {
+                await db.updateClient(activeClient.id, { isVip: !activeClient.isVip }, currentUser?.name || 'Admin');
+                loadData();
+              }} className="bg-amber-100 text-amber-600 px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-sm hover:bg-amber-600 hover:text-white transition-all border border-amber-200">
+                {activeClient.isVip ? 'Remover VIP' : 'Promover a VIP'}
+              </button>
            </div>
-           
-           <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
-              <div className="lg:col-span-2 space-y-10">
-                 <div className="bg-white p-12 rounded-[56px] border border-slate-200 shadow-sm relative overflow-hidden">
-                    {activeClient.isVip && <div className="absolute top-0 right-0 p-8"><VipBadge /></div>}
-                    <div className="flex justify-between items-start mb-10">
+
+           <div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
+              <div className="lg:col-span-3 space-y-12">
+                 <div className="bg-white p-16 rounded-[64px] border shadow-sm relative overflow-hidden">
+                    <div className="flex justify-between items-start mb-16">
                        <div>
-                          <h2 className="text-5xl font-black tracking-tighter text-slate-900">{activeClient.companyName}</h2>
-                          <p className="text-slate-400 font-bold text-lg mt-2">{activeClient.contactName}</p>
+                          <h2 className="text-6xl font-black tracking-tighter text-slate-900 mb-2">{activeClient.companyName}</h2>
+                          <p className="text-2xl font-black text-slate-300 tracking-tight">{activeClient.contactName}</p>
                        </div>
-                       {(() => {
-                         const rd = getRankData(projects.filter(p => p.clientId === activeClient.id).length, activeClient.isVip);
-                         return <div className={`text-5xl p-6 ${rd.bg} rounded-3xl border border-slate-100`}>{rd.medal}</div>
-                       })()}
+                       <div className="p-8 bg-slate-50 rounded-[40px] border border-slate-100 shadow-inner">
+                          <span className="text-4xl">{getClientPrestige(activeClient).icon}</span>
+                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-8 border-t border-slate-50 pt-10">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-12 pt-12 border-t border-slate-50">
                        <div>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">E-mail de Contato</p>
-                          <p className="font-bold text-slate-900">{activeClient.email}</p>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">E-mail de Contato</p>
+                          <p className="text-xl font-black text-slate-900">{activeClient.email}</p>
                        </div>
                        <div>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">WhatsApp / Tel</p>
-                          <p className="font-bold text-slate-900">{activeClient.phone || '---'}</p>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">WhatsApp / Tel</p>
+                          <p className="text-xl font-black text-slate-900">{activeClient.phone || 'Não informado'}</p>
                        </div>
                     </div>
                  </div>
 
-                 <div className="space-y-6">
-                    <h3 className="text-xl font-black text-slate-900 tracking-tight uppercase px-4">Projetos no Ecossistema</h3>
+                 <div className="space-y-8">
+                    <h3 className="text-2xl font-black tracking-tighter text-slate-900">Projetos no Ecossistema</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                        {projects.filter(p => p.clientId === activeClient.id).map(p => (
-                         <div key={p.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
-                            <h4 className="font-black text-slate-900 text-lg mb-2">{p.name}</h4>
-                            <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-3 py-1 rounded-lg">{p.status}</span>
+                         <div key={p.id} onClick={() => { setSelectedProjectId(p.id); setView('project-detail'); }} className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm hover:shadow-xl transition-all cursor-pointer group">
+                            <h4 className="text-2xl font-black text-slate-900 mb-4 tracking-tight group-hover:text-blue-600 transition-colors">{p.name}</h4>
+                            <span className="bg-blue-50 text-blue-600 px-3 py-1.5 rounded-xl text-[9px] font-black border border-blue-100 uppercase tracking-widest">{p.status}</span>
                          </div>
                        ))}
                     </div>
                  </div>
               </div>
 
-              <div className="bg-slate-950 p-12 rounded-[56px] text-white shadow-2xl flex flex-col items-center text-center h-fit">
-                 <div className="w-24 h-24 bg-slate-800 rounded-full flex items-center justify-center text-4xl mb-8">
-                    {getRankData(projects.filter(p => p.clientId === activeClient.id).length, activeClient.isVip).medal}
-                 </div>
-                 <h3 className="text-2xl font-black tracking-tight mb-2">Selo de Prestígio</h3>
-                 <p className="text-blue-400 font-black uppercase tracking-[0.2em] text-[10px] mb-8">{getRankData(projects.filter(p => p.clientId === activeClient.id).length, activeClient.isVip).category}</p>
-                 <div className="p-6 bg-slate-900 rounded-3xl border border-slate-800 italic text-slate-400 text-sm leading-relaxed">
-                    "Este parceiro demonstra um compromisso excepcional com a evolução digital através do Hub."
+              <div className="space-y-12 h-fit sticky top-10">
+                 <div className="bg-slate-950 p-12 rounded-[56px] text-white shadow-2xl relative overflow-hidden text-center">
+                    <div className="relative z-10">
+                       <div className="w-24 h-24 bg-slate-900 border border-slate-800 rounded-full flex items-center justify-center mx-auto mb-10 shadow-2xl">
+                          <span className="text-4xl">{getClientPrestige(activeClient).icon}</span>
+                       </div>
+                       <h4 className="text-3xl font-black mb-2 tracking-tighter">Selo de Prestígio</h4>
+                       <p className={`font-black uppercase text-[10px] tracking-[0.3em] mb-8 ${getClientPrestige(activeClient).color}`}>{getClientPrestige(activeClient).rank}</p>
+                       <div className="bg-slate-900/50 p-8 rounded-[32px] border border-white/5 text-slate-400 font-medium text-sm italic leading-relaxed">
+                          "Este parceiro demonstra um compromisso excepcional com a evolução digital através do Hub."
+                       </div>
+                    </div>
                  </div>
               </div>
            </div>
         </div>
       )}
 
-      {view === 'requests' && (
-        <div className="space-y-10 animate-in slide-in-from-bottom-8">
-           <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Central de Solicitações</h2>
-           {requests.length === 0 ? (
-             <div className="bg-white rounded-[48px] p-32 border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
-                <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mb-6">
-                   <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                </div>
-                <h3 className="text-xl font-black text-slate-300 uppercase tracking-widest">Sem solicitações no momento</h3>
-                <p className="text-slate-400 font-medium mt-2">O ecossistema está operando em estabilidade total.</p>
-             </div>
-           ) : (
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-               {requests.map(r => (
-                 <div key={r.id} className="bg-white p-12 rounded-[48px] border border-slate-200 shadow-sm flex flex-col">
-                    <div className="flex justify-between mb-8">
-                      <span className="px-4 py-1.5 bg-blue-50 text-blue-600 text-[10px] font-black rounded-xl border border-blue-100 uppercase tracking-widest">{r.status}</span>
-                      <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">BY: {clients.find(c => c.id === r.clientId)?.companyName}</span>
-                    </div>
-                    <h4 className="text-2xl font-black mb-4 tracking-tight">{r.title}</h4>
-                    <p className="text-slate-500 font-medium mb-10 leading-relaxed bg-slate-50 p-6 rounded-3xl border border-slate-100">{r.description}</p>
-                    
-                    <div className="flex-1 space-y-4 mb-8">
-                       <div className="flex justify-between items-center">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Resposta do Admin</label>
-                          <button 
-                            onClick={() => suggestAIResponse(r)}
-                            disabled={aiLoading === r.id}
-                            className={`text-[10px] font-black flex items-center space-x-2 px-4 py-2 rounded-xl border border-blue-100 transition-all ${
-                              aiLoading === r.id ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white hover:shadow-lg'
-                            }`}
-                          >
-                             <span>{aiLoading === r.id ? '🤖 IA PENSANDO...' : '🤖 IA: SUGERIR RESPOSTA'}</span>
-                          </button>
-                       </div>
-                       <textarea 
-                         value={requestResponses[r.id] || ''}
-                         onChange={(e) => setRequestResponses(prev => ({ ...prev, [r.id]: e.target.value }))}
-                         className="w-full p-6 bg-white border-2 border-slate-100 rounded-3xl text-sm font-medium outline-none focus:border-blue-500 h-32 resize-none"
-                         placeholder="Escreva ou peça ajuda à IA..."
-                       />
-                    </div>
-
-                    <div className="flex space-x-4 pt-8 border-t border-slate-50">
-                      <button 
-                        onClick={async () => {
-                          const status = r.status === RequestStatus.DONE ? RequestStatus.OPEN : RequestStatus.DONE;
-                          await db.updateRequestStatus(r.id, status, requestResponses[r.id] || '', user?.name || 'Admin');
-                          loadData();
-                        }} 
-                        className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                          r.status === RequestStatus.DONE 
-                            ? 'bg-slate-100 text-slate-500 hover:bg-slate-200' 
-                            : 'bg-slate-900 text-white hover:bg-black shadow-xl'
-                        }`}
-                      >
-                        {r.status === RequestStatus.DONE ? 'Reabrir Ticket' : 'Finalizar Ticket'}
-                      </button>
-                      <button 
-                        onClick={async () => {
-                          await db.updateRequestStatus(r.id, r.status, requestResponses[r.id] || '', user?.name || 'Admin');
-                          alert("Resposta salva e visível para o cliente.");
-                        }}
-                        className="flex-1 py-4 bg-blue-50 text-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest border border-blue-100 hover:bg-blue-600 hover:text-white transition-all"
-                      >
-                        Salvar Resposta
-                      </button>
-                    </div>
-                 </div>
-               ))}
-             </div>
-           )}
-        </div>
-      )}
-
-      {view === 'audit' && (
-        <div className="space-y-10 animate-in fade-in">
-           <h2 className="text-4xl font-black text-slate-900 tracking-tighter px-2">Logs de Auditoria Root</h2>
-           {auditLogs.length === 0 ? (
-             <div className="bg-white rounded-[48px] p-32 border border-slate-100 shadow-sm text-center">
-                <p className="text-slate-300 font-black uppercase tracking-widest italic">Nenhum rastro de atividade encontrado.</p>
-             </div>
-           ) : (
-             <div className="bg-white rounded-[48px] border border-slate-200 overflow-hidden shadow-sm">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-50 border-b text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                    <tr>
-                      <th className="px-12 py-8">Timestamp</th>
-                      <th className="px-12 py-8">Operador</th>
-                      <th className="px-12 py-8">Ação</th>
-                      <th className="px-12 py-8">Detalhes</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {auditLogs.map(a => (
-                      <tr key={a.id} className="hover:bg-slate-50/40 transition-colors">
-                        <td className="px-12 py-8 text-xs font-bold text-slate-400">{new Date(a.createdAt).toLocaleString()}</td>
-                        <td className="px-12 py-8 text-sm font-black text-slate-900">{a.userName}</td>
-                        <td className="px-12 py-8"><span className="px-4 py-1.5 bg-slate-900 text-white text-[10px] font-black rounded-xl uppercase tracking-widest">{a.action}</span></td>
-                        <td className="px-12 py-8 text-xs font-medium text-slate-500">{a.details}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-             </div>
-           )}
-        </div>
-      )}
-
       {view === 'users' && (
         <div className="space-y-10 animate-in slide-in-from-bottom-8">
-          <div className="flex justify-between items-end px-2">
+           <div className="flex justify-between items-end px-4">
              <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Matriz de Acessos</h2>
-             <button onClick={() => setShowModal('user')} className="bg-slate-900 text-white px-10 py-5 rounded-[24px] font-black shadow-2xl hover:bg-black transition-all">+ Autenticar Perfil</button>
-          </div>
-          <div className="bg-white rounded-[48px] border border-slate-200 overflow-hidden shadow-sm">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 border-b text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                <tr>
-                  <th className="px-12 py-10">Colaborador / UID</th>
-                  <th className="px-12 py-10">Role</th>
-                  <th className="px-12 py-10 text-right">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {users.map(u => (
-                  <tr key={u.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-12 py-10">
-                      <p className="text-slate-900 font-black text-lg">{u.name}</p>
-                      <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-2 rounded-md border tracking-tighter">UID: {u.id}</span>
-                      {u.phone && <p className="text-[10px] text-blue-500 font-bold mt-1">📞 {u.phone}</p>}
-                    </td>
-                    <td className="px-12 py-10">
-                       <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black border uppercase tracking-widest ${u.role === UserRole.ADMIN ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>{u.role}</span>
-                    </td>
-                    <td className="px-12 py-10 text-right">
-                      <button onClick={async () => {
-                        if(confirm(`ATENÇÃO: Deseja remover permanentemente o acesso de ${u.name}?`)) {
-                          await db.deleteUser(u.id, user?.name || 'Admin');
-                          await loadData();
-                        }
-                      }} className="text-rose-500 hover:text-white font-black text-[10px] tracking-widest px-8 py-4 border-2 border-rose-100 hover:bg-rose-500 hover:border-rose-500 rounded-2xl transition-all">REMOVER</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+             <button onClick={() => setShowModal('auth-profile')} className="bg-slate-950 text-white px-10 py-5 rounded-[24px] font-black shadow-2xl hover:scale-105 transition-all">+ Autenticar Perfil</button>
+           </div>
+           <div className="bg-white rounded-[56px] border shadow-sm overflow-hidden p-10">
+              <div className="grid grid-cols-12 gap-6 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-10 px-4">
+                 <div className="col-span-5">Colaborador / UID</div>
+                 <div className="col-span-4 text-center">Role</div>
+                 <div className="col-span-3 text-right">Ação</div>
+              </div>
+              <div className="space-y-6">
+                 {users.map(u => (
+                    <div key={u.id} className="grid grid-cols-12 gap-6 p-10 bg-slate-50/50 rounded-[40px] items-center border border-transparent hover:border-slate-100 transition-all">
+                       <div className="col-span-5">
+                          <p className="text-2xl font-black text-slate-900 leading-tight mb-2">{u.name}</p>
+                          <div className="inline-block bg-slate-200/50 px-3 py-1 rounded-lg">
+                             <code className="text-[10px] font-mono text-slate-500 uppercase tracking-tighter">UID: {u.id}</code>
+                          </div>
+                       </div>
+                       <div className="col-span-4 flex justify-center">
+                          <span className={`px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest border ${u.role === UserRole.ADMIN ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                             {u.role}
+                          </span>
+                       </div>
+                       <div className="col-span-3 flex justify-end">
+                          <button onClick={async () => {
+                             if(confirm(`Remover acesso de ${u.name}?`)) {
+                               await db.deleteUser(u.id, currentUser?.name || 'Admin');
+                               loadData();
+                             }
+                          }} className="px-10 py-4 bg-white border border-rose-100 text-rose-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all shadow-sm">Remover</button>
+                       </div>
+                    </div>
+                 ))}
+              </div>
+           </div>
         </div>
       )}
 
-      {/* MODAL PROJETO */}
-      {(showModal === 'project' || showModal === 'edit-project') && (
-        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-2xl flex items-center justify-center p-6 z-[60] overflow-y-auto">
-          <div className="bg-white rounded-[56px] w-full max-w-4xl p-16 shadow-2xl my-auto relative animate-in zoom-in-95 duration-300">
-            <h3 className="text-4xl font-black mb-12 tracking-tighter text-slate-900">{showModal === 'project' ? 'Novo Ecossistema' : 'Configurar Ecossistema'}</h3>
-            <form onSubmit={showModal === 'project' ? handleAddProject : handleEditProject} className="space-y-10">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-6">
-                   <div className="space-y-2">
-                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nome do Projeto</label>
-                     <input name="name" defaultValue={showModal === 'edit-project' ? activeProject?.name : ''} className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-black text-xl outline-none" required />
-                   </div>
-                   <div className="space-y-2">
-                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Parceiro</label>
-                     <select name="clientId" defaultValue={showModal === 'edit-project' ? activeProject?.clientId || '' : ''} className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-black text-lg outline-none">
-                       <option value="">Uso Interno / Sem Parceiro</option>
-                       {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
-                     </select>
-                   </div>
-                   <div className="space-y-2">
-                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Status Atual</label>
-                     <select name="status" defaultValue={showModal === 'edit-project' ? activeProject?.status || ProjectStatus.IDEA : ProjectStatus.IDEA} className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-black text-lg outline-none">
-                       {Object.values(ProjectStatus).map(s => <option key={s} value={s}>{s}</option>)}
-                     </select>
+      {view === 'crm' && (
+        <div className="space-y-10 animate-in slide-in-from-bottom-8">
+           <div className="flex justify-between items-end px-4">
+              <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Funil de Leads (CRM)</h2>
+              <button onClick={() => setShowModal('lead')} className="bg-emerald-600 text-white px-10 py-5 rounded-[24px] font-black shadow-2xl hover:scale-105 transition-all">+ Novo Lead</button>
+           </div>
+           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 px-4">
+              {[LeadStatus.PROSPECT, LeadStatus.NEGOTIATING, LeadStatus.PROPOSAL_SENT, LeadStatus.WON].map(status => (
+                <div key={status} className="bg-slate-100/50 p-6 rounded-[32px] border-2 border-slate-100 min-h-[600px] flex flex-col">
+                   <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-6 px-2">{status}</h4>
+                   <div className="space-y-4">
+                      {leads.filter(l => l.status === status).map(lead => (
+                        <div key={lead.id} className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 hover:shadow-xl transition-all group cursor-pointer relative overflow-hidden">
+                           <p className="font-black text-slate-900 text-xl mb-1 tracking-tight leading-tight">{lead.name}</p>
+                           <p className="text-[10px] font-bold text-slate-400 uppercase mb-6 tracking-widest">{lead.company}</p>
+                           <div className="flex justify-between items-center">
+                              <p className="text-sm font-black text-emerald-600">R$ {lead.estimatedValue.toLocaleString()}</p>
+                              <button className="text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600">Mover</button>
+                           </div>
+                        </div>
+                      ))}
                    </div>
                 </div>
-                <div className="space-y-6">
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Métricas Lighthouse (0-100)</p>
-                   <div className="grid grid-cols-2 gap-4">
-                     <div className="space-y-1">
-                        <label className="text-[8px] font-black text-slate-400 uppercase px-4">Performance</label>
-                        <input name="perf" type="number" defaultValue={showModal === 'edit-project' ? activeProject?.lighthouseMetrics?.performance : 0} className="w-full p-5 bg-slate-50 border rounded-[24px] font-black text-center" />
-                     </div>
-                     <div className="space-y-1">
-                        <label className="text-[8px] font-black text-slate-400 uppercase px-4">Acessibilidade</label>
-                        <input name="acc" type="number" defaultValue={showModal === 'edit-project' ? activeProject?.lighthouseMetrics?.accessibility : 0} className="w-full p-5 bg-slate-50 border rounded-[24px] font-black text-center" />
-                     </div>
-                     <div className="space-y-1">
-                        <label className="text-[8px] font-black text-slate-400 uppercase px-4">Boas Práticas</label>
-                        <input name="bp" type="number" defaultValue={showModal === 'edit-project' ? activeProject?.lighthouseMetrics?.bestPractices : 0} className="w-full p-5 bg-slate-50 border rounded-[24px] font-black text-center" />
-                     </div>
-                     <div className="space-y-1">
-                        <label className="text-[8px] font-black text-slate-400 uppercase px-4">SEO</label>
-                        <input name="seo" type="number" defaultValue={showModal === 'edit-project' ? activeProject?.lighthouseMetrics?.seo : 0} className="w-full p-5 bg-slate-50 border rounded-[24px] font-black text-center" />
-                     </div>
-                   </div>
-                   <input name="productionUrl" placeholder="Produção URL" defaultValue={showModal === 'edit-project' ? activeProject?.productionUrl : ''} className="w-full p-6 bg-slate-50 border rounded-[28px] font-bold outline-none" />
-                   <input name="figmaUrl" placeholder="Figma URL" defaultValue={showModal === 'edit-project' ? activeProject?.figmaUrl : ''} className="w-full p-6 bg-slate-50 border rounded-[28px] font-bold outline-none" />
-                   <input name="stack" placeholder="Stack Tecnológica (separada por vírgula)" defaultValue={showModal === 'edit-project' ? activeProject?.stack : ''} className="w-full p-6 bg-slate-50 border rounded-[28px] font-bold outline-none" required />
-                </div>
-              </div>
-              <textarea name="description" defaultValue={showModal === 'edit-project' ? activeProject?.description : ''} className="w-full p-8 bg-slate-50 border border-slate-100 rounded-[40px] h-40 font-medium text-lg outline-none resize-none" required placeholder="Descrição do projeto..."></textarea>
-              <div className="flex space-x-6 pt-6">
-                <button type="button" onClick={() => setShowModal(null)} className="flex-1 py-6 font-black text-slate-400 uppercase tracking-widest">CANCELAR</button>
-                <button type="submit" className="flex-1 py-6 bg-blue-600 text-white rounded-[28px] font-black shadow-2xl uppercase tracking-widest">{showModal === 'project' ? 'INICIAR PROJETO' : 'SALVAR ALTERAÇÕES'}</button>
-              </div>
-            </form>
-          </div>
+              ))}
+           </div>
         </div>
       )}
 
-      {/* MODAL USER */}
-      {showModal === 'user' && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-2xl flex items-center justify-center p-6 z-[60]">
-          <div className="bg-white rounded-[48px] w-full max-w-2xl p-16 shadow-2xl animate-in zoom-in-95 duration-300">
-            <h3 className="text-3xl font-black mb-10 tracking-tighter text-slate-900">Vincular Novo Perfil</h3>
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              try {
+      {view === 'requests' && (
+        <div className="space-y-10 animate-in slide-in-from-bottom-8">
+           <h2 className="text-5xl font-black text-slate-900 tracking-tighter px-4">Central de Solicitações</h2>
+           <div className="grid grid-cols-1 md:grid-cols-1 gap-12 px-4 max-w-4xl">
+             {requests.map(r => (
+               <div key={r.id} className="bg-white p-16 rounded-[64px] border border-slate-200 shadow-sm flex flex-col group hover:shadow-xl transition-all">
+                  <div className="flex justify-between items-center mb-12">
+                    <span className="px-5 py-2 bg-blue-50 text-blue-600 text-[10px] font-black rounded-full border border-blue-100 uppercase tracking-widest">{r.status}</span>
+                    <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">By: {clients.find(c => c.id === r.clientId)?.companyName || 'Unknown'}</p>
+                  </div>
+                  <h4 className="text-4xl font-black mb-8 tracking-tighter">{r.title}</h4>
+                  <div className="bg-slate-50 p-10 rounded-[40px] border border-slate-100 text-slate-500 font-bold leading-relaxed mb-12 text-lg">
+                    {r.description}
+                  </div>
+                  
+                  <div className="space-y-6">
+                     <div className="flex justify-between items-center">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Resposta do Admin</p>
+                        <button 
+                          onClick={async () => {
+                             setSuggestingResponse(r.id);
+                             const project = projects.find(p => p.id === r.projectId);
+                             const sugg = await geminiService.suggestTicketResponse(r, project?.name || 'Projeto Hub');
+                             setSuggestingResponse(null);
+                             // Mostra o modal de sugestão
+                             alert("Sugestão IA:\n" + sugg);
+                          }}
+                          className="flex items-center space-x-2 text-[10px] font-black text-blue-600 bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 hover:bg-blue-600 hover:text-white transition-all uppercase tracking-widest"
+                        >
+                           <span className="text-xs">🤖</span>
+                           <span>{suggestingResponse === r.id ? 'Gerando...' : 'IA: Sugerir Resposta'}</span>
+                        </button>
+                     </div>
+                     <textarea 
+                       id={`resp-${r.id}`}
+                       placeholder="Proposta de solução técnica..."
+                       className="w-full p-10 bg-white border-2 border-slate-100 rounded-[48px] text-lg font-bold outline-none focus:border-blue-500 h-48 resize-none shadow-inner"
+                       defaultValue={r.adminComment}
+                     />
+                  </div>
+                  <div className="grid grid-cols-2 gap-6 mt-12">
+                     <button onClick={async () => {
+                        const val = (document.getElementById(`resp-${r.id}`) as HTMLTextAreaElement).value;
+                        await db.updateRequestStatus(r.id, RequestStatus.DONE, val, currentUser?.name || 'Admin');
+                        loadData();
+                     }} className="py-6 bg-slate-900 text-white rounded-[28px] text-[10px] font-black uppercase tracking-widest shadow-2xl hover:scale-105 transition-all">Finalizar Ticket</button>
+                     <button onClick={async () => {
+                        const val = (document.getElementById(`resp-${r.id}`) as HTMLTextAreaElement).value;
+                        await db.updateRequestStatus(r.id, RequestStatus.REVIEWING, val, currentUser?.name || 'Admin');
+                        loadData();
+                     }} className="py-6 bg-blue-50 text-blue-600 rounded-[28px] text-[10px] font-black uppercase tracking-widest border border-blue-100 hover:bg-blue-600 hover:text-white transition-all">Salvar Resposta</button>
+                  </div>
+               </div>
+             ))}
+           </div>
+        </div>
+      )}
+
+      {view === 'briefing' && (
+        <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in">
+           <div className="bg-white p-16 rounded-[64px] border shadow-2xl">
+              <h2 className="text-5xl font-black text-slate-900 tracking-tighter mb-4">Briefing Mágico</h2>
+              <p className="text-slate-500 font-medium mb-12">Converta diálogos brutos em especificações de arquitetura Hub.</p>
+              <form onSubmit={handleBriefing} className="space-y-8">
+                 <textarea name="rawText" className="w-full p-10 bg-slate-50 border-none rounded-[48px] h-72 font-medium text-lg outline-none focus:ring-2 focus:ring-purple-500/20 transition-all resize-none" placeholder="O cliente mandou no WhatsApp que..." />
+                 <button type="submit" disabled={briefingLoading} className="w-full py-7 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-[32px] font-black shadow-2xl uppercase tracking-[0.3em] hover:scale-[1.02] active:scale-95 transition-all">
+                   {briefingLoading ? '🤖 ARQUITETANDO...' : '✨ GERAR ESTRUTURA HUB'}
+                 </button>
+              </form>
+           </div>
+           {briefingResult && (
+             <div className="bg-slate-950 rounded-[64px] p-20 text-white animate-in zoom-in-95 shadow-2xl">
+                <div className="flex justify-between items-start mb-16">
+                   <h2 className="text-5xl font-black tracking-tight">{briefingResult.name}</h2>
+                   <span className="bg-blue-600 px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest">{briefingResult.projectType}</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-16">
+                   <div className="space-y-10">
+                     <div>
+                       <p className="text-slate-500 font-black uppercase text-[10px] tracking-widest mb-4">Escopo do Valor</p>
+                       {/* Fix: Wrapped ReactMarkdown in a div to apply styles, as className is not supported on the component itself in some type definitions */}
+                       <div className="prose prose-invert prose-sm leading-relaxed">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{briefingResult.description}</ReactMarkdown>
+                       </div>
+                     </div>
+                     <div className="bg-slate-900 p-8 rounded-[32px] border border-white/5">
+                        <p className="text-blue-500 font-black uppercase text-[10px] tracking-widest mb-4">Pontos Estratégicos</p>
+                        <ul className="space-y-3">
+                           {briefingResult.strategicPoints?.map((p: string, i: number) => (
+                             <li key={i} className="text-sm font-medium flex items-center space-x-3">
+                                <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                                <span>{p}</span>
+                             </li>
+                           ))}
+                        </ul>
+                     </div>
+                   </div>
+                   <div className="bg-slate-900 p-12 rounded-[48px] flex flex-col justify-between border border-white/5 h-fit">
+                      <div>
+                         <p className="text-blue-500 font-black uppercase text-[10px] tracking-widest mb-6">Matriz de Tecnologia</p>
+                         <p className="text-2xl font-black mb-10">{briefingResult.stack}</p>
+                      </div>
+                      <div className="pt-10 border-t border-white/5">
+                         <p className="text-slate-500 text-[10px] font-black uppercase mb-2">Valor Estimado do Contrato</p>
+                         <p className="text-5xl font-black text-emerald-500 tracking-tighter">R$ {briefingResult.estimatedValue?.toLocaleString()}</p>
+                         <button onClick={() => {
+                            // Preencher formulário de lead ou projeto com estes dados
+                            alert("Dados capturados pela IA. Pronto para exportar.");
+                         }} className="w-full mt-10 py-5 bg-white text-slate-950 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-blue-500 hover:text-white transition-all">Importar para Leads</button>
+                      </div>
+                   </div>
+                </div>
+             </div>
+           )}
+        </div>
+      )}
+
+      {/* MODALS CORRIGIDOS */}
+      {showModal === 'lead' && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-2xl flex items-center justify-center p-6 z-[100]">
+           <div className="bg-white rounded-[56px] w-full max-w-2xl p-16 shadow-2xl animate-in zoom-in-95 duration-300">
+              <h3 className="text-3xl font-black mb-10 tracking-tighter">Novo Lead Hub</h3>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
+                const leadData = {
+                  name: f.get('name') as string,
+                  company: f.get('company') as string,
+                  email: f.get('email') as string,
+                  phone: f.get('phone') as string,
+                  status: LeadStatus.PROSPECT,
+                  estimatedValue: Number(f.get('value')) || 0,
+                  notes: f.get('notes') as string,
+                  source: 'Inbound'
+                };
+                await db.addLead(leadData, currentUser?.name || 'Admin');
+                setShowModal(null);
+                loadData();
+              }} className="space-y-6">
+                 <input name="name" placeholder="Responsável" className="w-full p-7 bg-slate-50 rounded-[28px] font-black text-xl outline-none" required />
+                 <input name="company" placeholder="Empresa" className="w-full p-7 bg-slate-50 rounded-[28px] font-bold outline-none" required />
+                 <div className="grid grid-cols-2 gap-6">
+                    <input name="email" placeholder="E-mail" className="p-7 bg-slate-50 rounded-[28px] font-bold outline-none" required />
+                    <input name="value" type="number" placeholder="Valor Estimado" className="p-7 bg-slate-50 rounded-[28px] font-black text-emerald-600 outline-none" />
+                 </div>
+                 <div className="flex space-x-6 pt-10">
+                    <button type="button" onClick={() => setShowModal(null)} className="flex-1 py-5 font-black text-slate-400 uppercase tracking-widest text-xs">Cancelar</button>
+                    <button type="submit" className="flex-1 py-5 bg-emerald-600 text-white rounded-[28px] font-black shadow-2xl uppercase tracking-widest text-xs">Salvar no Funil</button>
+                 </div>
+              </form>
+           </div>
+        </div>
+      )}
+
+      {showModal === 'auth-profile' && (
+        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-3xl flex items-center justify-center p-6 z-[100]">
+           <div className="bg-white rounded-[56px] w-full max-w-2xl p-16 shadow-2xl animate-in zoom-in-95 duration-300 text-center">
+              <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-10 shadow-xl shadow-blue-500/30">
+                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              </div>
+              <h3 className="text-3xl font-black mb-4 tracking-tighter">Autenticar Perfil</h3>
+              <p className="text-slate-500 mb-10">Vincule o UID do Firebase para habilitar o acesso ao Hub.</p>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
                 await db.saveUser({
                   id: f.get('uid') as string,
                   name: f.get('name') as string,
                   email: f.get('email') as string,
-                  phone: f.get('phone') as string,
                   role: f.get('role') as UserRole,
-                  isActive: true,
                   clientId: (f.get('clientId') as string) || undefined,
+                  isActive: true,
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString()
-                }, user?.name || 'Admin');
+                }, currentUser?.name || 'Admin');
                 setShowModal(null);
                 loadData();
-              } catch (err: any) {
-                alert("Erro ao salvar perfil: " + err.message);
-              }
-            }} className="space-y-8">
-              <input name="uid" placeholder="Cole o UID do Authentication" className="w-full p-6 bg-slate-50 border-2 border-blue-100 rounded-[28px] font-black font-mono text-sm outline-none focus:border-blue-600" required />
-              <div className="grid grid-cols-2 gap-8">
-                <input name="name" placeholder="Nome Completo" className="w-full p-6 bg-slate-50 border rounded-[28px] font-bold" required />
-                <input name="email" placeholder="E-mail de Login" className="w-full p-6 bg-slate-50 border rounded-[28px] font-bold" required />
-              </div>
-              <div className="grid grid-cols-2 gap-8">
-                <input name="phone" placeholder="WhatsApp / Contato" className="w-full p-6 bg-slate-50 border rounded-[28px] font-bold" />
-                <select name="role" className="w-full p-6 bg-slate-50 border rounded-[28px] font-black">
-                  <option value={UserRole.CLIENT}>Cliente Parceiro</option>
-                  <option value={UserRole.ADMIN}>Administrador Root</option>
-                </select>
-              </div>
-              <div className="flex space-x-6 pt-10">
-                <button type="button" onClick={() => setShowModal(null)} className="flex-1 py-6 font-bold text-slate-400 uppercase tracking-widest">Cancelar</button>
-                <button type="submit" className="flex-1 py-6 bg-blue-600 text-white rounded-[28px] font-black shadow-2xl uppercase tracking-widest">Confirmar Vínculo</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL CLIENTE */}
-      {showModal === 'client' && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-2xl flex items-center justify-center p-6 z-[60]">
-           <div className="bg-white rounded-[56px] w-full max-w-2xl p-16 shadow-2xl animate-in zoom-in-95 duration-300">
-              <h3 className="text-3xl font-black mb-10 tracking-tighter text-slate-900">Novo Parceiro de Negócio</h3>
-              <form onSubmit={handleAddClient} className="space-y-6">
-                 <input name="companyName" placeholder="Nome da Empresa" className="w-full p-7 bg-slate-50 border border-slate-100 rounded-[28px] font-black text-xl outline-none" required />
-                 <input name="contactName" placeholder="Responsável Direto" className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-bold outline-none" required />
+              }} className="space-y-6 text-left">
+                 <input name="uid" placeholder="UID do Firebase" className="w-full p-7 bg-slate-50 rounded-[28px] font-mono text-xs outline-none focus:ring-2 focus:ring-blue-500" required />
+                 <input name="name" placeholder="Nome Completo" className="w-full p-7 bg-slate-50 rounded-[28px] font-black text-lg outline-none" required />
+                 <input name="email" placeholder="E-mail de Login" className="w-full p-7 bg-slate-50 rounded-[28px] font-bold outline-none" required />
                  <div className="grid grid-cols-2 gap-6">
-                    <input name="email" placeholder="E-mail" className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-bold outline-none" required />
-                    <input name="phone" placeholder="WhatsApp" className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[28px] font-bold outline-none" />
+                    <select name="role" className="p-7 bg-slate-50 rounded-[28px] font-black text-xs uppercase tracking-widest outline-none">
+                       <option value={UserRole.CLIENT}>CLIENTE</option>
+                       <option value={UserRole.ADMIN}>ADMIN ROOT</option>
+                    </select>
+                    <select name="clientId" className="p-7 bg-slate-50 rounded-[28px] font-bold text-xs outline-none">
+                       <option value="">Vincular Parceiro...</option>
+                       {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+                    </select>
                  </div>
-                 
-                 <div className="flex items-center space-x-4 p-6 bg-amber-50 rounded-[28px] border border-amber-100">
-                    <input type="checkbox" name="isVip" id="isVip" className="w-6 h-6 rounded-lg accent-amber-500" />
-                    <label htmlFor="isVip" className="text-sm font-black text-amber-700 uppercase tracking-widest cursor-pointer">Definir como Parceiro VIP</label>
-                 </div>
-
                  <div className="flex space-x-6 pt-10">
-                    <button type="button" onClick={() => setShowModal(null)} className="flex-1 py-5 font-black text-slate-400 uppercase tracking-widest">CANCELAR</button>
-                    <button type="submit" className="flex-1 py-5 bg-blue-600 text-white rounded-[28px] font-black shadow-2xl uppercase tracking-widest">CADASTRAR</button>
+                    <button type="button" onClick={() => setShowModal(null)} className="flex-1 py-6 font-black text-slate-400 uppercase tracking-widest text-[10px]">Cancelar</button>
+                    <button type="submit" className="flex-1 py-6 bg-blue-600 text-white rounded-[28px] font-black shadow-2xl uppercase tracking-widest text-[10px]">Ativar Credencial</button>
                  </div>
               </form>
            </div>

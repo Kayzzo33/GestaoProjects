@@ -1,9 +1,44 @@
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { User, UserRole, ChangeRequest, Project } from "./types";
 import { db } from "./db";
 
 export class GeminiService {
+  async processSmartBriefing(rawInput: string): Promise<any> {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const systemInstruction = `
+      Você é um Arquiteto de Software e Estrategista de Negócios Sênior.
+      Seu objetivo é ler um texto bruto (conversa, áudio transcrito ou anotações) e extrair um BRIEFING TÉCNICO ESTRUTURADO.
+      
+      RETORNE APENAS UM JSON VÁLIDO no seguinte formato:
+      {
+        "name": "Nome sugerido para o projeto",
+        "description": "Resumo executivo do projeto em markdown",
+        "projectType": "Categoria (SaaS, E-commerce, App, etc)",
+        "stack": "Sugestão de tecnologias (Ex: React, Firebase, Node)",
+        "estimatedValue": 5000,
+        "timeline": "3 meses",
+        "strategicPoints": ["Ponto 1", "Ponto 2"]
+      }
+    `;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: rawInput,
+        config: { 
+          systemInstruction, 
+          temperature: 0.2,
+          responseMimeType: "application/json"
+        },
+      });
+      return JSON.parse(response.text || "{}");
+    } catch (error) {
+      console.error("Gemini Briefing Error:", error);
+      return null;
+    }
+  }
+
   async askAdminAI(user: User, prompt: string): Promise<string> {
     if (user.role !== UserRole.ADMIN) throw new Error("Não autorizado.");
 
@@ -16,7 +51,7 @@ export class GeminiService {
       - Projetos: ${JSON.stringify(context.projects)}
       - Logs: ${JSON.stringify(context.logs)}
       - Clientes: ${JSON.stringify(context.clients)}
-      - Solicitações/Tickets: ${JSON.stringify(context.requests)}
+      - Leads (Prospecção): ${JSON.stringify(context.leads)}
       
       REGRAS:
       1. Responda APENAS com base nos dados reais do banco.
@@ -82,7 +117,7 @@ export class GeminiService {
       
       REGRAS:
       1. Não use termos técnicos pesados.
-      2. Foque no progresso da parceria.
+      2. Foque no progresso da parceria e nos GANHOS ESTRATÉGICOS (valor de negócio).
       3. Use Português do Brasil (PT-BR).
     `;
 
